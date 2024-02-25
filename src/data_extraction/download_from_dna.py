@@ -3,7 +3,7 @@ from pathlib import Path
 import requests
 import re
 
-records = Path.cwd()/'Data/DNAnexus_export_urls-20240130-192242.txt'
+records = '/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/src/data_extraction/DNAnexus_export_urls-20240217-170536.txt'
 urls = open(records).read().split('\n')
 
 out_path = Path.cwd()/'Data/participant'

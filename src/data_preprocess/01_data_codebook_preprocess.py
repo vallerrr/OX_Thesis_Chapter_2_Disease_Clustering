@@ -8,6 +8,8 @@ QUESTIONS：
 import pandas as pd
 from src import params
 import re
+from collections import defaultdict
+import ast
 def save_codebook(df):
     df.to_csv(params.codebook_path/'UKB_var_select.csv',index=False)
 def compare_two_cats(a,b):
@@ -99,16 +101,46 @@ def find_field_info(field_id, id_lst,ind_lst):
     return id_ind,instance,array
 
 
-df_codebook[['ids_count','instance_count','array_count','ids','instance','array']]=[[None,None,None,None,None,None]]*len(df_codebook)
+df_codebook[['ids_count','instance_count','array_count','ids','instance','array','file_names','preprocessed_flag']]=[[None,None,None,None,None,None,None,None]]*len(df_codebook)
 for ind, row in df_codebook.iterrows():
     field_id = row['field_id']
     ids,instance,array = find_field_info(field_id,id_lst,ind_lst)
-    df_codebook.loc[ind, ['ids_count','instance_count','array_count']]=[len(ids),len(instance),len(array)]
+    df_codebook.loc[ind, ['ids_count', 'instance_count','array_count']]=[len(ids),len(instance),len(array)]
     df_codebook.loc[ind,'ids'] = ';'.join([str(id)for id in ids])
     df_codebook.loc[ind, 'instance'] = None if len(instance)==0 else ';'.join(instance)
     df_codebook.loc[ind, 'array'] = None if len(array)==0 else ';'.join(array)
-
+    df_codebook.loc[ind,'file_names'] = ';'.join(list(set([str(list(v.values())[0]) for v in ids])))
 # store the df_codebook
+
+# store the ids column in the format {filename:['var_names']}
+def sort_ids(row):
+    # read the data first
+    if len(row)>0:
+        ids = [{v: k for k, v in ast.literal_eval(x).items()} for x in row.split(';')]  # inverse the key,value
+        ids_sorted = defaultdict(list)
+        for d in ids:
+            for key, value in d.items():
+                ids_sorted[key].append(value)
+        ids_sorted = dict(ids_sorted)
+    else:
+        ids_sorted = None
+    return ids_sorted
+
+df_codebook.ids = df_codebook['ids'].apply(sort_ids)
+
 df_codebook.to_csv(params.codebook_path/'UKB_var_select.csv',index=False)
+
+
+# get the filename:count df
+counts_dict = {}
+for id in df_codebook.ids:
+    if id:
+        for key in id.keys():
+            if key not in counts_dict.keys():
+                counts_dict[key]=0
+
+            counts_dict[key]+= len(id[key])
+df_counts = pd.DataFrame.from_dict(counts_dict,columns=['count'],orient='index').reset_index(drop=False)
+
 
 
