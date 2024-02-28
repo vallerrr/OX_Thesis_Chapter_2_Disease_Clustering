@@ -27,7 +27,6 @@ def data_reader(row):
         df = pd.concat([df, temp], axis=1)
     return df
 
-
 def average(df):
     '''
     average by row, ignoring NAs
@@ -36,11 +35,11 @@ def average(df):
     '''
     return df.mean(skipna=True, axis=1)
 
-
 def array_name_by_ins(row, instance):
-    return [f'p{row.field_id}_i{instance}_a{i}' for i in row['array'].split(';')]
-
-
+    if instance == '':
+        return [f'p{row.field_id}_a{i}' for i in row['array'].split(';')]
+    else:
+        return [f'p{row.field_id}_i{instance}_a{i}' for i in row['array'].split(';')]
 
 def print_basic_info(df_read, row):
 
@@ -48,7 +47,7 @@ def print_basic_info(df_read, row):
     print(f'null in each columns:\n{df_read.isnull().sum()}')
     print(f'for field "{row.field_name}", instance_count = {row.instance_count},arrary_count = {row.array_count}')
 
-def recode_type_generator():
+def recode_type_generator(row):
     """
     overall recoding information generator
     :return: recode_type
@@ -56,13 +55,23 @@ def recode_type_generator():
     recode_type = {}
     recode_dict = {'a': 'average', 't': 'this_wave'}
     recode_type['recode'] = True if input('recode this field? y') == 'y' else False
-    recode_type_i = input('instance recode type')
-    try:
-        recode_type_i = recode_dict[recode_type_i]
-    except:
-        print(f'use {recode_type_i} as instance recode type')
-    recode_type['i'] = recode_type_i
 
+    # instance
+    if pd.isnull(row.instance) :
+        recode_type['i']='single_wave'
+
+    elif len(row.instance.split(";")) == 1:
+        # only available in one future wave
+        recode_type['i'] = 'single_wave'
+    else:
+        recode_type_i = input('instance recode type')
+        try:
+            recode_type_i = recode_dict[recode_type_i]
+        except:
+            print(f'use {recode_type_i} as instance recode type')
+        recode_type['i'] = recode_type_i
+
+    # array
     if row.array_count > 0:
         recode_type_a = input('array recode type')
         try:
@@ -143,7 +152,7 @@ def recoding_process(ind, row):
         try:
             recode_type = ast.literal_eval(row.recode_type)
         except:
-            recode_type = recode_type_generator()
+            recode_type = recode_type_generator(row)
 
         # step 1: recode check
         if recode_type['recode']:
@@ -153,6 +162,8 @@ def recoding_process(ind, row):
         # step 2: array check
         if 'a' in recode_type.keys():
             # first array then instance
+            if pd.isnull(row.instance):
+                row.instance = ''
             for ins in row.instance.split(';'):
                 array_cols = array_name_by_ins(row, ins)
                 if 'average' in recode_type['a']:
@@ -161,10 +172,17 @@ def recoding_process(ind, row):
         # step 3: instance check
         if recode_type['i'] == 'average':
             df[f'{row.field_id}'] = average(df_read[[x for x in df_read.columns if 'a' not in x]])
-        if recode_type['i'] == 'this_wave':
-
-            field_name = f'p{row.field_id}'if pd.isnull(row.instance) else f'p{row.field_id}_i{instance if str(instance)==max(row.instance.split(";")) else row.instance}'
+        elif recode_type['i'] == 'this_wave':
+            field_name = f'p{row.field_id}'if pd.isnull(row.instance) else f'p{row.field_id}_i{instance if str(instance)==max(row.instance.split(";") if isinstance(row.instance,str) else row.instance) else row.instance}'
             df[f'{row.field_id}'] = df_read[field_name]
+        elif 'w' in recode_type['i']:  # e.g. w1
+            df[f'{row.field_id}'] = df_read[f'p{row.field_id}_i{ins}']
+        elif recode_type['i'] == 'single_wave':
+            print('this is a single wave variable')
+            field_name = f'p{row.field_id}'if pd.isnull(row.instance) else f'p{row.field_id}_i{row.instance}'
+            df[f'{row.field_id}'] = df_read[field_name]
+        else:
+            print('key in unknown wave coding information')
 
         df_codebook.loc[ind, 'preprocessed_flag'] = 1
         df_codebook.loc[ind, 'recode_type'] = str(recode_type)
@@ -203,11 +221,12 @@ cate_names = params.cate_names
 cate_name = cate_names[2]
 iterators = df_codebook.loc[df_codebook['cate_name'] == cate_name, ].iterrows()
 
-replace_dict_basics = {'Prefer not to answer': None, 'Do not know': None, 'half': 0.5, '6+': 6, '2-4 times a week': 2, 'Once a week': 1, 'Less than once a week': 0.5, 'Never': 0, '5-6 times a week': 3, 'Once or more daily': 4, 'Sometimes': 1.0, 'Never/rarely': 0.0, 'Usually': 2.0, 'Always': 3.0, '1': 1.0, '2': 2.0, '3': 3.0, '4+': 4.0, 'quarter': 0.25, '3+': 3.0, 'No': 0.0, 'Yes': 1.0, '4': 4.0, '5': 5.0, 'low': 3.0, 'moderate': 2.0, 'high': 1.0, '5+': 5.0, 'varied': 0.5, 'Between 2 and 3 hours': 2.5, 'Between 30 minutes and 1 hour': 0.75, 'Between 1.5 and 2 hours': 1.75, 'Less than 15 minutes': 0.25, 'Between 15 and 30 minutes': 0.375, 'Over 3 hours': 3.0, 'Between 1 and 1.5 hours': 1.25, '4-5 times a week': 4.5, 'Once in the last 4 weeks': 0.25, '2-3 times a week': 2.5, '2-3 times in the last 4 weeks': 0.625, 'Every day': 7.0, "['Car/motor vehicle', 'Walk']": 3.5, "['Car/motor vehicle']": 4.0, "['Car/motor vehicle', 'Cycle']": 3.0, "['Walk']": 2.0, "['Car/motor vehicle', 'Walk', 'Public transport']": 3.0, "['Car/motor vehicle', 'Public transport']": 3.75, "['Public transport']": 3.0, "['Walk', 'Public transport']": 2.5, "['Car/motor vehicle', 'Walk', 'Cycle']": 2.75, "['Walk', 'Public transport', 'Cycle']": 2.0, "['Car/motor vehicle', 'Public transport', 'Cycle']": 3.25, "['Car/motor vehicle', 'Walk', 'Public transport', 'Cycle']": 2.0, "['Walk', 'Cycle']": 1.5, "['Cycle']": 1.0, "['None of the above']": None, "['Public transport', 'Cycle']": 2.5, "['Prefer not to answer']": None, '1-3 hours': 12.0, '3-5 hours': 4.0, '5-7 hours': 6.0, 'Under 1 hour': 0.5, '7-9 hours': 8.0, '9-12 hours': 10.5, '12+ hours': 12.0, 1.0: 1.0, 2.0: 2.0, 3.0: 3.0, 4.0: 4.0, 5.0: 5.0, '0': 0.0, '6': 6.0, '10': 10.0, '8': 8.0, '20': 20.0, '50': 50.0, '12': 12.0, '40': 40.0, '15': 15.0, '7': 7.0, '25': 25.0, '9': 9.0, '30': 30.0, '13': 13.0, '14': 14.0, '100': 100.0, '11': 11.0, '16': 16.0, '60': 60.0, '18': 18.0, '500': 500.0, '99': 99.0, '34': 34.0, '45': 45.0, '35': 35.0, '999': 999.0, '55': 55.0, '75': 75.0, '80': 80.0, '200': 200.0, '19': 19.0, '90': 90.0, '897': 897.0, '95': 95.0, '150': 150.0, '22': 22.0, '110': 110.0, '42': 42.0, '24': 24.0, '600': 600.0, '300': 300.0, '21': 21.0, '33': 33.0, '36': 36.0, '27': 27.0, '26': 26.0, '400': 400.0, '28': 28.0, '32': 32.0, '96': 96.0, 'Never tan, only burn': 0.0, 'Get moderately tanned': 2.0, 'Get very tanned': 3.0, 'Get mildly or occasionally tanned': 1.0, 'nan': None, 'About your age': 1.0, 'Younger than you are': 0.0, 'Older than you are': 2.0, 'Less than once a year': 0.5, '52': 52.0, '104': 104.0, '48': 48.0, '70': 70.0, '72': 72.0, '29': 29.0, '175': 175.0, '120': 120.0, '65': 65.0, '38': 38.0, '66': 66.0, '108': 108.0, '23': 23.0, '46': 46.0, '54': 54.0, '240': 240.0, '105': 105.0, '320': 320.0, '85': 85.0, '180': 180.0, '250': 250.0, '170': 170.0, '82': 82.0, '365': 365.0, '53': 53.0, '900': 900.0, '162': 162.0, '350': 350.0, '43': 43.0, '102': 102.0, '47': 47.0, '44': 44.0, '56': 56.0, '360': 360.0, '114': 114.0, '160': 160.0, '156': 156.0, '130': 130.0, '190': 190.0, '84': 84.0, '59': 59.0, 'Very fair': 1.0, 'Brown': 1.5, 'Dark olive': 2.0, 'Fair': 0.5, 'Black': 2.5, 'Light olive': 1.25, 'Most of the time': 2.0, 'Do not go out in sunshine': 0.0}
-file_count = 4
+replace_dict_basics = params.replace_dict_basics
 
-i=0
-while i <30 :
+file_count = 1
+
+i = 0
+while i < 30:
     print(i)
     ind, row = next(iterators)
     if pd.isnull(row['preprocessed_flag']):
@@ -220,6 +239,12 @@ while i <30 :
                 continue
             elif input('break? y/n')=='y':
                 break
+            elif input('relaunch? y/n')=='y':
+                df, df_codebook = recoding_process(ind, row)
+                i += 1
+
+print(df_codebook['preprocessed_flag'].value_counts())
+print(f'left to code = {df_codebook["preprocessed_flag"].isnull().sum()}')
 
 
 file_count += 1
@@ -228,6 +253,3 @@ df = pd.DataFrame()
 # only keep essential columns for df_codebook
 # df_codebook[params.codebook_basic_columns].to_csv(params.codebook_path/'UKB_var_select.csv',index=False)
 # print(replace_dict_basics)
-df_codebook['preprocessed_flag'].value_counts()
-print(f'left to code = {df_codebook["preprocessed_flag"].isnull().sum()}')
-
