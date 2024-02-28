@@ -58,7 +58,7 @@ def recode_type_generator(row):
 
     # instance
     if pd.isnull(row.instance) :
-        recode_type['i']='single_wave'
+        recode_type['i'] =  'single_wave'
 
     elif len(row.instance.split(";")) == 1:
         # only available in one future wave
@@ -105,9 +105,8 @@ def replace_recode_main(row, df_read):
                     replace_dict = manual_dict(replace_dict, unique_val)
         return replace_dict
 
-    def replacing_recode(df_read):
+    def replacing_recode(df_read,replace_dict):
 
-        replace_dict = replace_dict_basics
         unique_vals = list(pd.unique(df_read.values.ravel('K')))
         print(f'unique values = {unique_vals}')
 
@@ -125,8 +124,7 @@ def replace_recode_main(row, df_read):
     # main function body
     if pd.isnull(row['replace_dict']):
         # check whether the replace_dict already existed
-        replace_dict, df_read = replacing_recode(df_read)
-
+        replace_dict, df_read = replacing_recode(df_read, replace_dict_basics)
         df_codebook.loc[ind, 'replace_dict'] = str(replace_dict)
     else:
         replace_dict = row['replace_dict'].replace('nan: None,','').replace('nan:None,','')
@@ -159,6 +157,16 @@ def recoding_process(ind, row):
             replace_dict, df_read = replace_recode_main(row, df_read)
             df_codebook.loc[ind, 'replace_dict'] = str(replace_dict)
 
+            # update the replace_dict
+            update_flag = input('update the replace_dict?')
+            if update_flag == 'y':
+                replace_dict_basics.update(replace_dict)
+            elif update_flag == 'n':
+                for key in replace_dict.keys():
+                    if key in replace_dict_basics.keys():
+                        replace_dict_basics.pop(key)
+            # if update_flag == any other character, it will ignore the command
+
         # step 2: array check
         if 'a' in recode_type.keys():
             # first array then instance
@@ -175,7 +183,8 @@ def recoding_process(ind, row):
         elif recode_type['i'] == 'this_wave':
             field_name = f'p{row.field_id}'if pd.isnull(row.instance) else f'p{row.field_id}_i{instance if str(instance)==max(row.instance.split(";") if isinstance(row.instance,str) else row.instance) else row.instance}'
             df[f'{row.field_id}'] = df_read[field_name]
-        elif 'w' in recode_type['i']:  # e.g. w1
+        elif recode_type['i'].startswith('w'):  # e.g. w1
+            ins = int(recode_type['i'].replace('w',''))
             df[f'{row.field_id}'] = df_read[f'p{row.field_id}_i{ins}']
         elif recode_type['i'] == 'single_wave':
             print('this is a single wave variable')
@@ -187,8 +196,6 @@ def recoding_process(ind, row):
         df_codebook.loc[ind, 'preprocessed_flag'] = 1
         df_codebook.loc[ind, 'recode_type'] = str(recode_type)
 
-        if input('update the replace_dict?') == 'y':
-            replace_dict_basics.update(replace_dict)
         df_codebook.loc[ind, 'missing_count'] = df[f'{row.field_id}'].isnull().sum()
         print(f"missing  count = {df_codebook.loc[ind, 'missing_count']}")
     else:
@@ -216,14 +223,13 @@ else:
 
 
 df = pd.DataFrame()
-# df = pd.read_csv('/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/preprocessed_data/UKB_wave_4_Lifestyle_4.csv')
+# df = pd.read_csv('/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/preprocessed_data/UKB_wave_4_Socio-demographics_1.csv')
 cate_names = params.cate_names
-cate_name = cate_names[2]
+cate_name = cate_names[5]
 iterators = df_codebook.loc[df_codebook['cate_name'] == cate_name, ].iterrows()
-
 replace_dict_basics = params.replace_dict_basics
 
-file_count = 1
+file_count = 0
 
 i = 0
 while i < 30:
@@ -237,9 +243,9 @@ while i < 30:
             print(e)
             if 'No such file or directory' in str(e):
                 continue
-            elif input('break? y/n')=='y':
+            elif input('break? y/n') == 'y':
                 break
-            elif input('relaunch? y/n')=='y':
+            elif input('relaunch? y/n') == 'y':
                 df, df_codebook = recoding_process(ind, row)
                 i += 1
 
@@ -253,3 +259,5 @@ df = pd.DataFrame()
 # only keep essential columns for df_codebook
 # df_codebook[params.codebook_basic_columns].to_csv(params.codebook_path/'UKB_var_select.csv',index=False)
 # print(replace_dict_basics)
+# df_codebook[['preprocessed_flag','cate_name']].value_counts()
+
