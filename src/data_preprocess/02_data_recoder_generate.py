@@ -7,25 +7,12 @@ import pandas as pd
 from src import params
 import ast
 import os
+import numpy as np
+from datetime import datetime
+from dateutil.parser import parse
+from src.data_preprocess import utils
 
-def data_reader(row):
-    """
-    the function to retrieve data
-    :param row:
-    :return: data of selected cols in df
-    """
-    file_names = [int(x) for x in row.file_names.split(';')]
-    ids = ast.literal_eval(row.ids)
-    df = pd.DataFrame()
-    for file_name in file_names:
-        try:
-            cols = [id_ for id_ in ids[file_name] if int(id_.split('_')[1].split('i')[-1]) <= instance]
-        except:
-            cols = ids[file_name]
-        temp = pd.read_csv(params.participant_path / f'{file_name}.csv')
-        temp = temp.loc[:, cols]
-        df = pd.concat([df, temp], axis=1)
-    return df
+
 
 def average(df):
     '''
@@ -42,11 +29,11 @@ def array_name_by_ins(row, instance):
         return [f'p{row.field_id}_i{instance}_a{i}' for i in row['array'].split(';')]
 
 def print_basic_info(df_read, row):
-
+    null_dict = df_read.isnull().sum()
     print(f"unique values = {list(pd.unique(df_read.values.ravel('K')))}")
-    print(f'null in each columns:\n{df_read.isnull().sum()}')
+    print(f'null in each columns:\n{null_dict}')
     print(f'for field "{row.field_name}", instance_count = {row.instance_count},arrary_count = {row.array_count}')
-
+    return null_dict.to_dict()
 def recode_type_generator(row):
     """
     overall recoding information generator
@@ -54,7 +41,7 @@ def recode_type_generator(row):
     """
     recode_type = {}
     recode_dict = {'a': 'average', 't': 'this_wave'}
-    recode_type['recode'] = True if input('recode this field? y') == 'y' else False
+    recode_type['recode'] =  input('recode this field? y')
 
     # instance
     if pd.isnull(row.instance) :
@@ -110,12 +97,19 @@ def replace_recode_main(row, df_read):
         unique_vals = list(pd.unique(df_read.values.ravel('K')))
         print(f'unique values = {unique_vals}')
 
-        auto_replace_contrl = True if input('do you want to launch the automatic dict for numbers? y') == 'y' else False
+        if all(unique_val in [np.nan, 'No', 'Yes', 'Do not know','Prefer not to answer','Not sure'] for unique_val in unique_vals):
+
+            auto_replace_contrl = True
+        else:
+            auto_replace_contrl = True if input('do you want to launch the automatic dict? y') == 'y' else False
+
         if auto_replace_contrl:
             replace_dict = auto_dict(replace_dict, unique_vals)
         else:
+
             for unique_val in set(unique_vals) - set(replace_dict.keys()):
-                replace_dict = manual_dict(replace_dict, unique_val)
+                if not pd.isnull(unique_val):
+                    replace_dict = manual_dict(replace_dict, unique_val)
         replace_dict = {x:y for x,y in zip(replace_dict.keys(),replace_dict.values()) if x in unique_vals}
 
         df_read.replace(replace_dict, inplace=True)
@@ -137,10 +131,12 @@ def replace_recode_main(row, df_read):
         df_read.replace(replace_dict, inplace=True)
     return replace_dict, df_read
 
-def recoding_process(ind, row):
 
-    df_read = data_reader(row)
-    print_basic_info(df_read, row)
+def recoding_process_main(ind, row):
+
+    df_read = utils.data_reader(row)
+    null_dict = print_basic_info(df_read, row)
+    df_codebook.loc[ind, 'missing_info_general'] = str(null_dict)
 
     drop_col = True if input('drop this column? y/n') == 'y' else False
     if not drop_col:
@@ -153,7 +149,7 @@ def recoding_process(ind, row):
             recode_type = recode_type_generator(row)
 
         # step 1: recode check
-        if recode_type['recode']:
+        if recode_type['recode'] =='y':
             replace_dict, df_read = replace_recode_main(row, df_read)
             df_codebook.loc[ind, 'replace_dict'] = str(replace_dict)
 
@@ -166,6 +162,8 @@ def recoding_process(ind, row):
                     if key in replace_dict_basics.keys():
                         replace_dict_basics.pop(key)
             # if update_flag == any other character, it will ignore the command
+        elif recode_type['recode']=='t': # timestamp type
+            df_read.apply(lambda col:utils.try_to_datetime(col))
 
         # step 2: array check
         if 'a' in recode_type.keys():
@@ -181,7 +179,7 @@ def recoding_process(ind, row):
         if recode_type['i'] == 'average':
             df[f'{row.field_id}'] = average(df_read[[x for x in df_read.columns if 'a' not in x]])
         elif recode_type['i'] == 'this_wave':
-            field_name = f'p{row.field_id}'if pd.isnull(row.instance) else f'p{row.field_id}_i{instance if str(instance)==max(row.instance.split(";") if isinstance(row.instance,str) else row.instance) else row.instance}'
+            field_name = f'p{row.field_id}'if pd.isnull(row.instance) else f'p{row.field_id}_i{ max(row.instance.split(";") if isinstance(row.instance,str) else row.instance)}'
             df[f'{row.field_id}'] = df_read[field_name]
         elif recode_type['i'].startswith('w'):  # e.g. w1
             ins = int(recode_type['i'].replace('w',''))
@@ -212,7 +210,7 @@ def recoding_process(ind, row):
 
 
 # cognitive function as an example
-instance = 4
+instance = 0
 
 wave_codebook_path = params.codebook_path / f'UKB_preprocess_codebook_wave_{instance}.csv'
 if os.path.isfile(wave_codebook_path):
@@ -222,14 +220,17 @@ else:
     df_codebook['preprocessed_flag'] = [None]*len(df_codebook)
 
 
-df = pd.DataFrame()
-# df = pd.read_csv('/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/preprocessed_data/UKB_wave_4_Socio-demographics_1.csv')
+
+file_count = 0
+
 cate_names = params.cate_names
-cate_name = cate_names[5]
+cate_name = cate_names[4]
 iterators = df_codebook.loc[df_codebook['cate_name'] == cate_name, ].iterrows()
 replace_dict_basics = params.replace_dict_basics
 
-file_count = 0
+df = pd.DataFrame()
+df = pd.read_csv(f'/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/preprocessed_data/UKB_wave_4_{cate_name}_{file_count}.csv')
+
 
 i = 0
 while i < 30:
@@ -237,27 +238,52 @@ while i < 30:
     ind, row = next(iterators)
     if pd.isnull(row['preprocessed_flag']):
         try:
-            df, df_codebook = recoding_process(ind, row)
+            df, df_codebook = recoding_process_main(ind, row)
             i += 1
         except Exception as e:
             print(e)
             if 'No such file or directory' in str(e):
                 continue
-            elif input('break? y/n') == 'y':
-                break
-            elif input('relaunch? y/n') == 'y':
-                df, df_codebook = recoding_process(ind, row)
-                i += 1
+            elif input('skip? y/n') == 'y':
+                df_codebook.loc[ind,'preprocessed_flag'] = 0
+            else:
+                if input('break? y/n') == 'y':
+                    break
+                if input('relaunch? y/n') == 'y':
+                    df, df_codebook = recoding_process_main(ind, row)
+        i += 1
 
 print(df_codebook['preprocessed_flag'].value_counts())
 print(f'left to code = {df_codebook["preprocessed_flag"].isnull().sum()}')
 
-
 file_count += 1
 del df
 df = pd.DataFrame()
+
+
+df_codebook.loc[df.loc[df['preprocessed_flag'].notnull()].index,'preprocessed_flag'] = 0
+
+temp = df_codebook.loc[df_codebook['cate_name'] == cate_name, ]
+temp['preprocessed_flag'].value_counts()
+
+'''
 # only keep essential columns for df_codebook
-# df_codebook[params.codebook_basic_columns].to_csv(params.codebook_path/'UKB_var_select.csv',index=False)
-# print(replace_dict_basics)
-# df_codebook[['preprocessed_flag','cate_name']].value_counts()
+df_codebook[params.codebook_basic_columns].to_csv(params.codebook_path/'UKB_var_select.csv',index=False)
+print(replace_dict_basics)
+df_codebook[['preprocessed_flag','cate_name']].value_counts()
+'''
+
+'''
+columns = ['20508', '20534', '20546', '20437', '20533', '20517', '20535', '20536',
+       '21027']
+columns  = [int(x) for x in columns]
+df_codebook.loc[df_codebook['field_id'].isin(columns),'preprocessed_flag']=[None]*len(columns)
+df_codebook.loc[df_codebook['field_id'].isin(columns),'replace_dict']=[None]*len(columns)
+df_codebook.loc[df_codebook['field_id'].isin(columns),'recode_type']=[None]*len(columns)
+
+
+
+'''
+
+
 
