@@ -12,33 +12,53 @@ import numpy as np
 from src.data_preprocess import utils
 import warnings
 
+# ======================================================================================================================
 # 1. Load the codebook
+# ======================================================================================================================
 
 df_codebook = pd.read_csv(params.codebook_path/'UKB_var_select.csv')
+fail_dict = {}
+replace_dict_basics = params.replace_dict_basics
+cate_names = params.cate_names
+# ======================================================================================================================
+# 2. control zone
+# ======================================================================================================================
 
 file_count = 0
 instance = 0
-cate_names = params.cate_names
-cate_name = cate_names[0]
+cate_name = cate_names[7]
 iterators = df_codebook.loc[df_codebook['cate_name'] == cate_name, ].iterrows()
-replace_dict_basics = params.replace_dict_basics
-
-df = pd.DataFrame()
-
-while len(df.columns) < 5:
-    try:
-        ind, row = next(iterators)
-    except:
-        break
-
-    if row['preprocessed_flag'] == 1:
-
-        print(row['field_id'])
-        print(f'Processing {row["field_name"]}')
-        df, df_codebook = utils.recoding_process_main_for_final_data_generator(ind, row,df_codebook, df, instance, cate_name, file_count, replace_dict_basics)
 
 
-#df.to_csv(params.preprocessed_path/)
+# ======================================================================================================================
+# 3. process zone
+# ======================================================================================================================
+
+count = 0
+while count <5:
+    df = pd.DataFrame()
+
+    while len(df.columns) < 30:
+        try:
+            ind, row = next(iterators)
+        except:
+            break
+
+        if row['preprocessed_flag'] == 1:
+            try:
+                print(row['field_id'])
+                print(f'Processing {row["field_name"]}')
+                df, df_codebook = utils.recoding_process_main_for_final_data_generator(ind, row,df_codebook, df, instance, cate_name, file_count, replace_dict_basics)
+            except Exception as e:
+                print(f'Failed to process {row["field_name"]}, {e}')
+                if cate_name in fail_dict.keys():
+                    fail_dict[cate_name].append({row['field_name']: e})
+                else:
+                    fail_dict[cate_name] = [{row['field_name']: e}]
+    file_count += 1
+    count += 1
+
+#  df.to_csv(params.preprocessed_path/)
 """
 # check zone 
 

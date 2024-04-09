@@ -28,24 +28,23 @@ def data_reader(row, instance=4):
             cols = ids[file_name]
         if 'eid' not in cols:
             cols= ['eid'] + cols
-        temp = pd.read_csv(params.participant_path / f'{file_name}.csv')
+        temp = pd.read_csv(params.participant_path / f'{file_name}.csv', low_memory=False)
         temp = temp.loc[:, cols]
         # concat temp and df based on the eid column
         if len(df) == 0:
             df = temp
         else:
             df = pd.merge(df, temp, on='eid')
-        # df = pd.concat([df, temp], axis=1)
     return df
 
 
-def recoding_process_main_for_final_data_generator(ind, row,df_codebook, df, instance, cate_name, file_count, replace_dict_basics):
+def recoding_process_main_for_final_data_generator(ind, row, df_codebook, df, instance, cate_name, file_count, replace_dict_basics):
 
     df_read = data_reader(row, instance)
     null_dict = df_read.drop(columns=['eid']).isnull().sum().to_dict()
     df_codebook.loc[ind, 'missing_info_general'] = str(null_dict)
     temp = pd.DataFrame(df_read['eid'])
-    print(temp.columns)
+
     # df_read=df_read.drop(columns=['eid'])
     # preprocessing code
 
@@ -56,23 +55,17 @@ def recoding_process_main_for_final_data_generator(ind, row,df_codebook, df, ins
         raise ValueError(f"recode_type is not a dict for {row.field_name}")
 
     # step 1: recode check
-    if recode_type['recode'] =='y':
-        replace_dict, df_read = replace_recode_main(row, df_read)
-        df_codebook.loc[ind, 'replace_dict'] = str(replace_dict)
-
-        # update the replace_dict
-        update_flag = input('update the replace_dict?')
-        if update_flag == 'y':
-            replace_dict_basics.update(replace_dict)
-        elif update_flag == 'n':
-            for key in replace_dict.keys():
-                if key in replace_dict_basics.keys():
-                    replace_dict_basics.pop(key)
+    if recode_type['recode'] == 'y':
+        replace_dict = ast.literal_eval(row['replace_dict'].replace('nan: None,', '').replace('nan:None,', '').replace(', nan: None', '').replace('nan: None', ''))
+        df_read.replace(to_replace=replace_dict.keys(), value=replace_dict.values(), inplace=True)
+        for column in df_read.columns:
+            if not column == 'eid':
+                df_read[column] = pd.to_numeric(df_read[column], errors='ignore')
         # if update_flag == any other character, it will ignore the command
-    elif recode_type['recode'] == 't': # timestamp type
+    elif recode_type['recode'] == 't':  # timestamp type
         df_read.apply(lambda col: try_to_datetime(col))
     elif recode_type['recode'] == True:
-        replace_dict = ast.literal_eval(row['replace_dict'])
+        replace_dict = ast.literal_eval(row['replace_dict'].replace('nan: None,','').replace('nan:None,','').replace(', nan: None','').replace('nan: None',''))
         df_read.replace(to_replace=replace_dict.keys(), value=replace_dict.values(), inplace=True)
         for column in df_read.columns:
             if not column == 'eid':
@@ -122,7 +115,10 @@ def recoding_process_main_for_final_data_generator(ind, row,df_codebook, df, ins
     missing_count = df[f'{row.field_id}'].isnull().sum()
     df_codebook.loc[ind, 'missing_count'] = missing_count
     print(f"missing  count = {missing_count}")
-    df.to_csv(params.preprocessed_path / f'UKB_wave_{instance}_{cate_name}_{file_count}.csv', index=False)
+
+    file_name = f'UKB_wave_{instance}_{cate_name}_{file_count}.csv'
+    df_codebook.loc[ind, 'file_name'] = file_name
+    df.to_csv(params.preprocessed_path /file_name, index=False)
     df_codebook.to_csv(params.codebook_path / f'UKB_preprocess_codebook_wave_{instance}.csv', index=False)
     del temp
     return df, df_codebook
