@@ -37,6 +37,13 @@ def data_reader(row, instance=4):
             df = pd.merge(df, temp, on='eid')
     return df
 
+def average(df):
+    '''
+    average by row, ignoring NAs
+    :param df:
+    :return:
+    '''
+    return df.mean(skipna=True, axis=1)
 
 def recoding_process_main_for_final_data_generator(ind, row, df_codebook, df, instance, cate_name, file_count, replace_dict_basics):
 
@@ -207,3 +214,19 @@ def replace_recode_main(row, df_read,df_codebook,ind):
 
         df_read.replace(replace_dict, inplace=True)
     return replace_dict, df_read
+
+def manual_dict(replace_dict, unique_val):
+    replace_val = input(f'for value "{unique_val}", replace it with value: (z->None)')
+    replace_dict[unique_val] = float(replace_val) if not replace_val == 'z' else None
+    return replace_dict
+
+def auto_dict(replace_dict, unique_vals):
+    for unique_val in unique_vals:
+        try:
+            float_value = float(unique_val)
+            if not pd.isnull(unique_val):
+                replace_dict[unique_val] = float_value
+        except:
+            if unique_val in set(unique_vals) - set(replace_dict.keys()):
+                replace_dict = manual_dict(replace_dict, unique_val)
+    return replace_dict

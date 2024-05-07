@@ -24,7 +24,7 @@ for col in dates_col:
 df_single_record[record_column+'_first_3'] = [ast.literal_eval(x) if pd.notnull(x) else None for x in df_single_record[record_column+'_first_3']]
 
 # ------------------------------------------------------------------------------------------------------------------
-# define comorbidity
+# 1 define comorbidity
 # ------------------------------------------------------------------------------------------------------------------
 comorbidity_interval=datetime.timedelta(days=365)
 
@@ -35,7 +35,6 @@ def calculate_comorbidity(row):
         return str(comorbidity)
     return None
 
-
 df_single_record['comorbidity'] = df_single_record.apply(calculate_comorbidity, axis=1)
 # count the comorbidity
 df_single_record['comorbidity_count'] = df_single_record['comorbidity'].apply(lambda x: len(ast.literal_eval(x)) if pd.notnull(x) else 0)
@@ -43,7 +42,7 @@ df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', ind
 
 
 # ------------------------------------------------------------------------------------------------------------------
-# disease prevalence using #all_icd
+# 2 disease prevalence using #main_icd
 # ------------------------------------------------------------------------------------------------------------------
 def count_disease(x, disease):
     if str(x) == 'None':
@@ -53,7 +52,7 @@ def count_disease(x, disease):
 
 df_disease_prev = pd.DataFrame()
 filed_name = 'main_icd'
-field_id = HES_ICD_ids['all_icd']['id']
+
 
 # 1. get the total count
 uniq_diseases = df_single_record[f'{filed_name}_first_3'].explode().unique()
@@ -68,8 +67,6 @@ df_disease_prev = df_disease_prev.T.reset_index()
 df_disease_prev.rename(columns={'index':'disease_3',0:'count'}, inplace=True)
 df_disease_prev.drop(df_disease_prev.loc[df_disease_prev['disease_3']=='Unnamed: 22'].index, inplace=True)
 df_disease_prev.to_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv', index=False)
-
-
 
 df_disease_prev= pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
 
@@ -129,4 +126,47 @@ fig.tight_layout()
 plt.savefig(params.current_path / f'plot/{record_column}_disease_prevalence_by_year_and_chapter.pdf')
 
 
+# --------------------------------------------------------------
+# 3 disease prevalence using #all_icd
+# --------------------------------------------------------------
+# retrieve gender on the df_single_record
+df_read = pd.read_csv(params.preprocessed_path / 'UKB_wave_0_Socio-demographics_0.csv')
+columns_to_remain = ['eid', '21022', '31']
+df_read = df_read[columns_to_remain]
+df_single_record = pd.merge(df_read,df_single_record, on='eid', how='left')
 
+temp = df_single_record.copy()
+
+# reorder the diseases based on their corresponding date
+for ind, row in temp.iterrows():
+    if ind % 1000 == 0:
+        print(ind)
+    if pd.notnull(row[f'{record_column}_uniq_count']):
+        disease_count = int(row[f'{record_column}_uniq_count'])
+        diseases = row[f'{record_column}_first_3']
+        dates = [row[x] for x in dates_col[:disease_count]]
+        index = np.argsort(dates)
+        sorted_dates = [dates[i] for i in index]
+        sorted_disease = [diseases[i] for i in index]
+
+        temp.loc[ind, f'{record_column}_first_3'] = str(sorted_disease)
+        temp.loc[ind, dates_col[:disease_count]] = sorted_dates
+
+df_single_record = temp.copy()
+df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
+
+df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
+# sequence analysis
+from prefixspan import PrefixSpan
+diseases_db = [ast.literal_eval(x) for x in df_single_record['main_icd_first_3'] if pd.notnull(x)]
+ps = PrefixSpan(diseases_db)
+df_disease_prev = pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
+
+
+trial = ps.topk(1066)  # 1066 is the number of diseases over 1000 counts
+# convert trial to df
+df_comorbidity = pd.DataFrame(columns=['frequency', 'disease'])
+df_comorbidity['frequency'] = [x[0] for x in trial]
+df_comorbidity['disease'] = [x[1] for x in trial]
+df_comorbidity['disease_count'] = [len(x) for x in df_comorbidity['disease']]
+df_comorbidity.drop(df_comorbidity.loc[df_comorbidity['disease_count']==1].index, inplace=True)

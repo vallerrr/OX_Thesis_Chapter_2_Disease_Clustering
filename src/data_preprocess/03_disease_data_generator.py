@@ -202,19 +202,6 @@ df_disease_prev = df_disease_prev.T.reset_index()
 df_disease_prev.rename(columns={'index':'disease_4', 0:'count'}, inplace=True)
 df_disease_prev.drop(df_disease_prev.loc[df_disease_prev['disease_4']=='Unnamed: 22'].index, inplace=True)
 
-df_disease_prev['diseases_1'] = df_disease_prev['disease_4'].apply(lambda x: str(x)[0] )
-df_disease_prev['diseases_2'] = df_disease_prev['disease_4'].apply(lambda x: int(str(x)[1:3] ))
-df_disease_prev['diseases_3'] = df_disease_prev['disease_4'].apply(lambda x: str(x)[:3] )
-
-
-
-
-
-
-
-'''df_single_record['p41262_a0'] = pd.to_datetime(df_single_record['p41262_a0'], errors='coerce')
-df_single_record['p41262_a0'].hist(bins=30)
-plt.show()
-'''
-
-## TODO: plot a chapter size  vs time plot
+df_disease_prev['diseases_1'] = df_disease_prev['disease_4'].apply(lambda x: str(x)[0])
+df_disease_prev['diseases_2'] = df_disease_prev['disease_4'].apply(lambda x: int(str(x)[1:3]))
+df_disease_prev['diseases_3'] = df_disease_prev['disease_4'].apply(lambda x: str(x)[:3])
