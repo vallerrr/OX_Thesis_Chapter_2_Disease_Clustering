@@ -8,10 +8,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from src import params
 import ast
-import os
 import numpy as np
 from src.data_preprocess import utils
-import warnings
 
 
 def register_missings(df_codebook, field_ids, note, file_name, df, field_id, replace_dict=None, missing_count=None,missing = 'mean'):
@@ -959,13 +957,16 @@ df_codebook_final.to_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0_
 
 # change the column names in both dfs to be just the field_id
 df = pd.read_csv(params.preprocessed_path/ 'UKB_wave_0_Round_2_variables_0.csv')
-df.rename(columns={column: int(column[1:]) for column in df.columns if column not in  ['eid','p6142_retired', 'p6142_employed', 'p6142_unable_to_work', 'p6142_doing_unpaid_work']}, inplace=True)
-df.to_csv(params.preprocessed_path/ 'UKB_wave_0_Round_2_variables_0.csv', index=False)
+df.rename(columns={column: int(column[1:]) for column in df.columns if column not in ['eid','p6142_retired', 'p6142_employed', 'p6142_unable_to_work', 'p6142_doing_unpaid_work']}, inplace=True)
+df.to_csv(params.preprocessed_path / 'UKB_wave_0_Round_2_variables_0.csv', index=False)
 
+df = pd.read_csv(params.preprocessed_path/ 'UKB_wave_0_Round_2_variables_1.csv')
+df.rename(columns={column: int(column[1:]) for column in df.columns if column not in ['eid','p6142_retired', 'p6142_employed', 'p6142_unable_to_work', 'p6142_doing_unpaid_work']}, inplace=True)
+df.to_csv(params.preprocessed_path / 'UKB_wave_0_Round_2_variables_1.csv', index=False)
 
 
 # missing values
-df_codebook_final['missing'] = ['mean' if not x=='median' else 'median' for x in df_codebook_final['missing']]
+df_codebook_final['missing'] = ['mean' if not x =='median' else 'median' for x in df_codebook_final['missing']]
 
 fail_ids = []
 for ind,row in df_codebook_final.iterrows():
@@ -983,6 +984,30 @@ for ind,row in df_codebook_final.iterrows():
         fail_ids.append(field_id)
 fail_ids = [int(x) for x in fail_ids]
 df_codebook_final.loc[df_codebook_final['field_id'].isin(fail_ids), 'missing_fail'] = 1
+df_codebook_final.to_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0_final.csv', index=False)
+
+
+fields_to_check = ['p6142_retired', 'p6142_employed', 'p6142_unable_to_work', 'p6142_doing_unpaid_work']
+for field_id in fields_to_check:
+    row = df_codebook_final.loc[df_codebook_final['field_name'] == field_id,]
+    file_path = params.preprocessed_path / row['file_name'].values[0]
+    temp = pd.read_csv(file_path)
+    missing = row['missing'].values[0]
+    if missing == 'mean':
+        temp[field_id].fillna(temp[field_id].mean(), inplace=True)
+    elif missing == 'median':
+        temp[field_id].fillna(temp[field_id].median(), inplace=True)
+    temp.to_csv(file_path, index=False)
+
+# save the df_codebook_final
+df_codebook_final = df_codebook_final.loc[df_codebook_final['missing_fail'] != 1,]
+df_codebook_final.to_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0_final.csv', index=False)
+
+df_codebook_final['cate_name'].value_counts()
+
+
+final_data_path = params.data_path.parent / 'final_data'
+
 # ======================================================================================================================
 # save the data
 # ======================================================================================================================
