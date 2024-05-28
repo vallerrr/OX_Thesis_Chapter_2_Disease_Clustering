@@ -230,3 +230,69 @@ def auto_dict(replace_dict, unique_vals):
             if unique_val in set(unique_vals) - set(replace_dict.keys()):
                 replace_dict = manual_dict(replace_dict, unique_val)
     return replace_dict
+
+def create_single_record_df(record_column,HES_ICD_ids):
+    """
+    create a single record df for a specific record column
+    :param record_column: one of ['all_icd','main_icd','second_icd']
+    :param HES_ICD_ids: {"all_icd": {"id": '41270', "time": '41280'}, "main_icd": {"id": '41202', "time": '41262'}, "second_icd": {"id": '41203', "time": None}}
+
+    :return: cleaned diseases record df with the eid, the recoded diseases, the unique count of diseases, and the first 3 characters of the diseases and date
+    """
+    df_codebook = pd.read_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0.csv')
+    # read id
+    df_single_record = data_reader(df_codebook.loc[df_codebook['field_id'] == int(HES_ICD_ids[record_column]['id']),].iloc[0])
+
+    df_single_record[record_column] = df_single_record[f"p{HES_ICD_ids[record_column]['id']}"].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None)
+    df_single_record[record_column+'_uniq_count'] = df_single_record[record_column].apply(lambda x: len(set(x)) if str(x)!='None' else 0)
+    df_single_record[record_column+'_first_3'] = df_single_record[record_column].apply(lambda x: [ele[:3] for ele in x] if str(x)!='None' else None)
+    df_single_record.drop(columns=[f"p{HES_ICD_ids[record_column]['id']}"], inplace=True)
+    # read time
+    df_single_record = pd.merge(left=df_single_record, right=data_reader(df_codebook.loc[df_codebook['field_id'] == int(HES_ICD_ids[record_column]['time']),].iloc[0]), left_on='eid', right_on='eid')
+
+    # reorder the diseases based on their corresponding date
+    # retrieve gender and age on the df_single_record
+    df_read = pd.read_csv(params.preprocessed_path / 'UKB_wave_0_Socio-demographics_0.csv')
+    columns_to_remain = ['eid', '21022', '31']
+    df_read = df_read[columns_to_remain]
+    df_single_record = pd.merge(df_read, df_single_record, on='eid', how='left')
+
+    temp = df_single_record.copy()
+    dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))]
+    dates_dict = {f'p{HES_ICD_ids[record_column]["time"]}_a{x}': f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))}
+    temp.rename(columns=dates_dict, inplace=True)
+
+    # sort the date columns
+    temp = temp[columns_to_remain+ [f'{record_column}', f'{record_column}_uniq_count', f'{record_column}_first_3']+dates_col]
+
+    # reorder the diseases based on their corresponding date
+    dates_df = temp[dates_col].copy()
+    sorted_indices = dates_df.apply(np.argsort, axis=1)
+
+    def sort_by_indices(list_, index):
+        if str(list_) == 'None':
+            return None
+        else:
+            indices = sorted_indices.loc[index].values[:len(list_)]
+
+            sorted_list = [list_[i]  for i in indices]
+
+            return sorted_list
+
+    # Apply the function to the 'diseases' column
+    temp[f'{record_column}_first_3'] = temp.apply(lambda row: sort_by_indices(row[f'{record_column}_first_3'], row.name) if str(row) != 'None' else None, axis=1)
+
+    # Apply the function fo the dates columns
+    dates_sorted = temp.apply(lambda row: sort_by_indices(row[dates_col], row.name), axis=1)
+    dataframes = [pd.DataFrame(dates_sorted[i]).T for i in range(len(dates_sorted))]
+    m = pd.concat(dataframes)
+    m.columns = dates_col
+    m.reset_index(drop=True, inplace=True)
+    temp[dates_col] = m[dates_col]
+
+    df_single_record = temp.copy()
+    # df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
+
+    return df_single_record
+
+

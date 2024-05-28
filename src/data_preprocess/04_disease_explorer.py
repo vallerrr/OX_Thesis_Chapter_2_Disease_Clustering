@@ -1,27 +1,38 @@
-"""
-# Created by valler at 02/04/2024
-Feature: 
+import os.path
 
-"""
 import pandas as pd
 from src import params
 from pathlib import Path
+from src.data_preprocess import utils
 import matplotlib.pyplot as plt
 import datetime
-record_column = 'main_icd'
 import numpy as np
 import ast
 import warnings
+import polars as pl
+from prefixspan import PrefixSpan
 warnings.filterwarnings('ignore')
 
+
+record_column = 'all_icd'
 HES_ICD_ids = {"all_icd": {"id": '41270', "time": '41280'}, "main_icd": {"id": '41202', "time": '41262'}, "second_icd": {"id": '41203', "time": None}}
 intermediate_path = Path('/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/intermediate_files')
-df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
-dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x}' for x in range(0,int(df_single_record[ f'{record_column}_uniq_count'].max()))]
+df_codebook = pd.read_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0.csv')
 
+# read the df_single_record
+if os.path.isfile(intermediate_path / f'{record_column}_complete.csv'):
+    df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
+else:
+    df_single_record = utils.create_single_record_df(record_column,HES_ICD_ids)
+
+dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))]
+
+# convert the dates to datetime (following chunk of code should always be run)
 for col in dates_col:
     df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
 df_single_record[record_column+'_first_3'] = [ast.literal_eval(x) if pd.notnull(x) else None for x in df_single_record[record_column+'_first_3']]
+df_single_record_pl = pl.DataFrame(df_single_record)
+
 
 # ------------------------------------------------------------------------------------------------------------------
 # 1 define comorbidity
@@ -42,7 +53,7 @@ df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', ind
 
 
 # ------------------------------------------------------------------------------------------------------------------
-# 2 disease prevalence using #main_icd
+# 2 disease prevalence
 # ------------------------------------------------------------------------------------------------------------------
 def count_disease(x, disease):
     if str(x) == 'None':
@@ -51,44 +62,60 @@ def count_disease(x, disease):
         return x.count(disease)
 
 df_disease_prev = pd.DataFrame()
-filed_name = 'main_icd'
+filed_name = record_column
 
-
-# 1. get the total count
+# 2.1. generate the df_disease_prev
 uniq_diseases = df_single_record[f'{filed_name}_first_3'].explode().unique()
+
+disease = uniq_diseases[0]
 
 disease_dict = {}
 for disease in uniq_diseases:
-    count = df_single_record[f'{filed_name}_first_3'].apply(lambda x: count_disease(x, disease)).sum()
-    disease_dict[disease] = count
-    df_disease_prev[disease] = [count]
+    if (disease not in disease_dict.keys()) &(not pd.isnull(disease)):
+        count = df_single_record[f'{filed_name}_first_3'].apply(lambda x: count_disease(x, disease)).sum()
+        disease_dict[disease] = count
+        df_disease_prev[disease] = [count]
 df_disease_prev = df_disease_prev.T.reset_index()
 
-df_disease_prev.rename(columns={'index':'disease_3',0:'count'}, inplace=True)
+
+df_disease_prev.rename(columns={'index': 'disease_3', 0:'count'}, inplace=True)
 df_disease_prev.drop(df_disease_prev.loc[df_disease_prev['disease_3']=='Unnamed: 22'].index, inplace=True)
+df_disease_prev.drop(index = df_disease_prev.loc[df_disease_prev['disease_3'].isna(),].index,axis=1,inplace=True)
 df_disease_prev.to_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv', index=False)
 
-df_disease_prev= pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
+df_disease_prev = pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
 
-# 2. year information
+# 2.2. year information of each disease in the df_disease_prev dataframe
 def count_year(row, disease):
-    if pd.isnull(row[f'{filed_name}_uniq_count']):
+    """
+    count the year information of specific diseases across all samples
+    :param row:
+    :param disease:
+    :return: {}
+    """
+    if row[f'{record_column}_uniq_count']==0:
         return None
     else:
-        diseases_lst = list(row[f'{filed_name}_first_3'])
+        diseases_lst = row[f'{record_column}_first_3']
+
         if disease in diseases_lst:
             index = [i for i, x in enumerate(diseases_lst) if x == disease]
             years = [row[dates_col[i]].year for i in index]
             return years
-        return None
 
-for disease in df_disease_prev['disease_3'].unique():
-    print(count)
-    df_single_record['years'] = df_single_record.apply(lambda x: count_year(x, disease), axis=1)
 
-    # Flatten the list of years and count the occurrences
-    year_counts = pd.Series([y for x in df_single_record['years'].dropna() for y in x]).value_counts().to_dict()
-    df_disease_prev.loc[df_disease_prev['disease_3'] == disease, 'years'] = str(year_counts)
+uniq_diseases = df_disease_prev['disease_3'].unique().tolist()
+
+df_disease_prev['years'] = [None for x in range(len(df_disease_prev))]
+for disease in uniq_diseases:
+    print(uniq_diseases.index(disease))
+    if str(df_disease_prev.loc[df_disease_prev['disease_3'] == disease, 'years'].values[0])=='None':
+
+        df_single_record['years'] = df_single_record.apply(lambda x: count_year(x, disease), axis=1)
+
+        # Flatten the list of years and count the occurrences
+        year_counts = pd.Series([y for x in df_single_record['years'].dropna() for y in x]).value_counts().to_dict()
+        df_disease_prev.loc[df_disease_prev['disease_3'] == disease, 'years'] = str(year_counts)
 
 df_disease_prev.to_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv', index=False)
 
@@ -97,8 +124,8 @@ years = range(1992, 2024)
 for year in years:
     df_disease_prev[year] = df_disease_prev['years'].apply(lambda x: ast.literal_eval(x).get(year) if pd.notnull(x) and (str(year) in x) else None)
 
-# 4. mark the diseases as chapters
-df_ICD = pd.read_csv(intermediate_path / 'ICD10.csv')
+# 4. mark the diseases as chapters and parent code
+df_ICD = pd.read_csv(intermediate_path / 'ICD_10.csv')
 
 def find_parent_id(x):
     if pd.notnull(x):
@@ -113,52 +140,28 @@ df_disease_prev.to_csv(intermediate_path / f'{record_column}_disease_prevalence_
 
 # 5. plot the disease prevalence by year and chapter
 df_disease_prev = pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
+df_ICD = pd.read_csv(intermediate_path / 'ICD_10.csv')
 
 df_disease_to_plot = df_disease_prev.groupby('chapter').sum()
 df_disease_to_plot.drop(axis=1, columns=['disease_3', 'years', 'parent_coding'], inplace=True)
-df_disease_to_plot = df_disease_to_plot.T
 
 fig, ax = plt.subplots(figsize=(10, 7))
-df_disease_to_plot.drop(axis=0,index=['count',1992,1993,1994,2023]).reindex(sorted(df_disease_to_plot.columns), axis=1).plot(kind='bar', stacked=True, ax=ax, width=0.8)
+df_disease_to_plot.drop(axis=1, columns=['count','1992', '1993', '1994', '2023']).reindex(sorted(df_disease_to_plot.columns), axis=1).T.plot(kind='bar', stacked=True, ax=ax, width=0.8)
 handles, labels = ax.get_legend_handles_labels() # reverse the order of legend
 ax.legend(reversed(handles), reversed(labels), title='Chapter', title_fontsize='large', fontsize='small', loc='center left', bbox_to_anchor=(1.0, 0.5))
 fig.tight_layout()
+
 plt.savefig(params.current_path / f'plot/{record_column}_disease_prevalence_by_year_and_chapter.pdf')
 
 
 # --------------------------------------------------------------
 # 3 disease prevalence using #all_icd
 # --------------------------------------------------------------
-# retrieve gender on the df_single_record
-df_read = pd.read_csv(params.preprocessed_path / 'UKB_wave_0_Socio-demographics_0.csv')
-columns_to_remain = ['eid', '21022', '31']
-df_read = df_read[columns_to_remain]
-df_single_record = pd.merge(df_read,df_single_record, on='eid', how='left')
-
-temp = df_single_record.copy()
-
-# reorder the diseases based on their corresponding date
-for ind, row in temp.iterrows():
-    if ind % 1000 == 0:
-        print(ind)
-    if pd.notnull(row[f'{record_column}_uniq_count']):
-        disease_count = int(row[f'{record_column}_uniq_count'])
-        diseases = row[f'{record_column}_first_3']
-        dates = [row[x] for x in dates_col[:disease_count]]
-        index = np.argsort(dates)
-        sorted_dates = [dates[i] for i in index]
-        sorted_disease = [diseases[i] for i in index]
-
-        temp.loc[ind, f'{record_column}_first_3'] = str(sorted_disease)
-        temp.loc[ind, dates_col[:disease_count]] = sorted_dates
-
-df_single_record = temp.copy()
-df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
 
 df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
 # sequence analysis
-from prefixspan import PrefixSpan
-diseases_db = [ast.literal_eval(x) for x in df_single_record['main_icd_first_3'] if pd.notnull(x)]
+
+diseases_db = [ast.literal_eval(x) for x in df_single_record[f'{record_column}_first_3'] if pd.notnull(x)]
 ps = PrefixSpan(diseases_db)
 df_disease_prev = pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
 
@@ -170,3 +173,37 @@ df_comorbidity['frequency'] = [x[0] for x in trial]
 df_comorbidity['disease'] = [x[1] for x in trial]
 df_comorbidity['disease_count'] = [len(x) for x in df_comorbidity['disease']]
 df_comorbidity.drop(df_comorbidity.loc[df_comorbidity['disease_count']==1].index, inplace=True)
+
+# polars library
+
+
+# --------------------------------------------------------------
+# analysis at the chapter & individual level
+# --------------------------------------------------------------
+df_disease_prev = pd.read_csv(intermediate_path / f'{record_column}_disease_prevalence_4_digits.csv')
+df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
+df_single_record[f'{record_column}_first_3'] = [ast.literal_eval(x) if pd.notnull(x) else None for x in df_single_record[f'{record_column}_first_3']]
+
+# df_single_record['icd_chapter_coding'] = [ast.literal_eval(x) if pd.notnull(x) else None for x in df_single_record['icd_chapter_coding']]
+
+df_ICD = pd.read_csv(intermediate_path / 'ICD_10.csv')
+
+# log the chapter information for the 'main_icd_first_3' and replace with numbers
+df_single_record['icd_parent_coding'] = [[find_parent_id(i) for i in x] if str(x)!='None' else None for x in df_single_record[f'{record_column}_first_3']]
+df_single_record['icd_chapter_coding'] = [[find_parent_id(i) for i in x] if str(x)!='None' else None for x in df_single_record['icd_parent_coding']]
+
+
+chapter_replace_dict = {f"{x}": y for y,x in zip(range(1, 23),['Chapter I', 'Chapter II', 'Chapter III', 'Chapter IV', 'Chapter V', 'Chapter VI', 'Chapter VII', 'Chapter VIII', 'Chapter IX', 'Chapter X', 'Chapter XI', 'Chapter XII', 'Chapter XIII', 'Chapter XIV', 'Chapter XV', 'Chapter XVI', 'Chapter XVII', 'Chapter XVIII', 'Chapter XIX', 'Chapter XX', 'Chapter XXI', 'Chapter XXII'])}# at the chapter level
+df_single_record['icd_chapter_coding'] = [[chapter_replace_dict[i] for i in x] if str(x)!='None' else None for x in df_single_record['icd_chapter_coding']]
+
+df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
+
+
+diseases_db = df_single_record['icd_chapter_coding'].dropna().to_list()
+ps = PrefixSpan(diseases_db)
+trial = ps.topk(1000)
+# will the ps.topk() return repeatited count?
+df_disease_pattern_by_chapter = pd.DataFrame(columns=['frequency', 'disease'])
+df_disease_pattern_by_chapter['frequency'] = [x[0] for x in trial]
+df_disease_pattern_by_chapter['disease'] = [x[1] for x in trial]
+df_disease_pattern_by_chapter['disease_count'] = [len(x) for x in df_disease_pattern_by_chapter['disease']]
