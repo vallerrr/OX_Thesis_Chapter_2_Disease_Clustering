@@ -196,14 +196,28 @@ df_single_record['icd_chapter_coding'] = [[find_parent_id(i) for i in x] if str(
 chapter_replace_dict = {f"{x}": y for y,x in zip(range(1, 23),['Chapter I', 'Chapter II', 'Chapter III', 'Chapter IV', 'Chapter V', 'Chapter VI', 'Chapter VII', 'Chapter VIII', 'Chapter IX', 'Chapter X', 'Chapter XI', 'Chapter XII', 'Chapter XIII', 'Chapter XIV', 'Chapter XV', 'Chapter XVI', 'Chapter XVII', 'Chapter XVIII', 'Chapter XIX', 'Chapter XX', 'Chapter XXI', 'Chapter XXII'])}# at the chapter level
 df_single_record['icd_chapter_coding'] = [[chapter_replace_dict[i] for i in x] if str(x)!='None' else None for x in df_single_record['icd_chapter_coding']]
 
-df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
 
+df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
 
 diseases_db = df_single_record['icd_chapter_coding'].dropna().to_list()
 ps = PrefixSpan(diseases_db)
-trial = ps.topk(1000)
+trial = ps.topk(10000)
 # will the ps.topk() return repeatited count?
 df_disease_pattern_by_chapter = pd.DataFrame(columns=['frequency', 'disease'])
 df_disease_pattern_by_chapter['frequency'] = [x[0] for x in trial]
 df_disease_pattern_by_chapter['disease'] = [x[1] for x in trial]
 df_disease_pattern_by_chapter['disease_count'] = [len(x) for x in df_disease_pattern_by_chapter['disease']]
+
+# check the disease by single chapter
+for chap in range(1, 23):
+    df_disease_pattern_by_chapter[f'chap_{chap}_flag'] = [1 if chap in x else 0 for x in df_disease_pattern_by_chapter['disease']]
+
+df_disease_pattern_by_chapter.to_csv(intermediate_path / f'{record_column}_disease_pattern_by_chapter.csv', index=False)
+
+df_disease_pattern_by_chapter = pl.read_csv(intermediate_path / f'{record_column}_disease_pattern_by_chapter.csv')
+
+
+# --------------------------------------------------------------
+# 4 analysis for diseases occured during the research window
+# --------------------------------------------------------------
+year_window = [2006, 2010]

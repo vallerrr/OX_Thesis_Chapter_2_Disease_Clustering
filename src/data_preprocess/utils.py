@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime
 from dateutil.parser import parse
 from src import params
+import ast
 
 def data_reader(row, instance=4):
     """
@@ -295,4 +296,22 @@ def create_single_record_df(record_column,HES_ICD_ids):
 
     return df_single_record
 
+def import_df_single_record(record_column,):
+    """
+    import the single record df
+    :param record_column:
+    :return:
+    """
+    df_single_record = pd.read_csv(params.intermediate_path / f'{record_column}_complete.csv')
 
+    dates_col = [f'p{params.HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))]
+    # convert the dates to datetime (following chunk of code should always be run)
+
+
+    for col in dates_col:
+        df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
+
+    list_columns = ['all_icd_first_3', 'icd_parent_coding', 'icd_chapter_coding']
+    for column in list_columns:
+        df_single_record[column] = df_single_record[column].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None)
+    return dates_col,df_single_record
