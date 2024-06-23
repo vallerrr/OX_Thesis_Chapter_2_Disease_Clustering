@@ -302,11 +302,10 @@ def import_df_single_record(record_column,):
     :param record_column:
     :return:
     """
-    df_single_record = pd.read_csv(params.intermediate_path / f'{record_column}_complete.csv')
+    df_single_record = pd.read_csv(params.intermediate_path / f'{record_column}_complete.csv',index_col=0)
 
     dates_col = [f'p{params.HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))]
     # convert the dates to datetime (following chunk of code should always be run)
-
 
     for col in dates_col:
         df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
@@ -315,3 +314,29 @@ def import_df_single_record(record_column,):
     for column in list_columns:
         df_single_record[column] = df_single_record[column].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None)
     return dates_col,df_single_record
+
+
+def map_icd_to_phecode(icd_codes,df_phemap):
+    """
+    map the icd codes to phecode and keep the original *count* of the icd codes
+
+    """
+    if str(icd_codes) == 'None':
+        return None
+    else:
+        phecode = []
+        for icd_code in icd_codes:
+            if icd_code in df_phemap.ICD10.tolist():
+                rows = df_phemap.loc[df_phemap['ICD10'] == icd_code, 'PHECODE']
+                if len(rows) > 1:
+                    phecode.append(rows.values.tolist())
+                else:
+                    phecode.append(rows.values[0])
+            else:
+                # if the icd code is not in the phemap, then we record it as its original but plu tails to recognise them
+                phecode.append(f'{icd_code}.4444')
+        if len(icd_codes) == len(phecode):
+            return phecode
+        else:
+            print(icd_codes, phecode)
+            return None
