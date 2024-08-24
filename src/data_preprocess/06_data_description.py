@@ -114,7 +114,7 @@ if disease_column not in df.columns:
     df = pd.merge(df, df_single_record[['eid', disease_column]], how='left', left_on='eid', right_on='eid')
 # average disease count by age and gender
 
-df[f'{level}_disease_count'] = [len(x) if str(x) not in ['None','nan']  else 0 for x in df[disease_column]]
+df[f'{level}_disease_count'] = [len(x) if str(x) not in ['None','nan'] else 0 for x in df[disease_column]]
 
 
 # ----------------------------------------------------------
@@ -163,7 +163,7 @@ def count_chapter(row):
         count_dict = None
     return count_dict
 import ast
-df[disease_column] = [ast.literal_eval(x) if str(x) not in ['None','nan','NaN'] else None for x in df[disease_column] ]
+df[disease_column] = [ast.literal_eval(x) if str(x) not in params.nan_str else None for x in df[disease_column] ]
 df_to_plot = df[[disease_column, '31', '21022']].copy()
 
 

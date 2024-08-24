@@ -105,7 +105,7 @@ df_ICD['type'].value_counts()
 # 4 dates for a single df
 # ------------------------------------------------------------------------------------------------------------------
 # 1. codes to generate the file (main_icd_complete.csv and all_icd_complete.csv)
-record_column = 'main_icd'
+record_column = 'all_icd'
 df_single_record = df_disease[['eid',f'{record_column}_first_3', f'{record_column}_uniq_count']]
 dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x}' for x in range(0,int(df_single_record[ f'{record_column}_uniq_count'].max()))]
 columns = ['eid',f'{record_column}_first_3', f'{record_column}_uniq_count']+dates_col
@@ -122,15 +122,6 @@ df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', ind
 df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
 for col in dates_col:
     df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
-
-
-
-
-
-
-
-
-
 
 
 # ------------------------------------------------------------------------------------------------------------------

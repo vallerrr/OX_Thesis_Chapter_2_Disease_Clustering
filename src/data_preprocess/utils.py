@@ -302,7 +302,7 @@ def import_df_single_record(record_column,):
     :param record_column:
     :return:
     """
-    df_single_record = pd.read_csv(params.intermediate_path / f'{record_column}_complete.csv',index_col=0)
+    df_single_record = pd.read_csv(params.intermediate_path / f'{record_column}_complete.csv')
 
     dates_col = [f'p{params.HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))]
     # convert the dates to datetime (following chunk of code should always be run)
@@ -310,7 +310,7 @@ def import_df_single_record(record_column,):
     for col in dates_col:
         df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
 
-    list_columns = ['all_icd_first_3', 'icd_parent_coding', 'icd_chapter_coding']
+    list_columns = ['all_icd_first_3', 'icd_parent_coding', 'icd_chapter_coding','phecode','diseases_within_window_phecode_selected','diseases_within_window_phecode_selected_category']
     for column in list_columns:
         df_single_record[column] = df_single_record[column].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None)
     return dates_col,df_single_record
@@ -340,3 +340,57 @@ def map_icd_to_phecode(icd_codes,df_phemap):
         else:
             print(icd_codes, phecode)
             return None
+
+
+def clean_unmatched_ICD(row):
+    """
+    clean the unmatched ICD codes (ends with 4444 in the column), this function can take care of the list of list situation
+    :param row: should be not empty
+    :return:
+    """
+    if str(row).count('[')==1:
+        updated_row = [None if str(x).endswith('4444') else float(x) for x in row]
+    else:
+        updated_row=[]
+        for ele in row:
+            if '[' not in str(ele):
+                updated_row.append(None if str(ele).endswith('4444') else ele)
+            else:
+                updated_row_ele = [None if str(x).endswith('4444') else float(x) for x in ele]
+                updated_row.append(updated_row_ele)
+    return updated_row
+
+
+def return_chronoic_code(val,df_phemap):
+    """
+    only returns the phecode that is chronoic, otherwise None
+    :param val:
+    :param df_phemap:
+    :return:
+    """
+    if '[' in str(val):
+        # if those diseases are from one date, executing the function in the list
+        # if there is only one condition within the list is chronic, unfold the list
+        val_list = []
+        for v in val:
+            v = float(v)
+            if df_phemap.loc[df_phemap['PHECODE'] == v,'CHRONIC_INDICATOR'].values[0]==1:
+                val_list.append(v)
+            # we don't need to add the non-chronic condition inside the val_list as they are from the same date
+            # we tackle with the situation of only 1/0 disease are chronic as below
+
+        if len(val_list)<=1:
+            if len(val_list)==1:
+                return val_list[0]
+            else:
+                return None
+        else:
+            return val_list
+
+    else:
+        if pd.notnull(val):
+            val = float(val)
+            if df_phemap.loc[df_phemap['PHECODE'] == val,'CHRONIC_INDICATOR'].values[0]==1:
+                return val
+            else:
+                return None
