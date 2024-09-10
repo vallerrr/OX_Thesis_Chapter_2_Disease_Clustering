@@ -305,14 +305,15 @@ def import_df_single_record(record_column,):
     df_single_record = pd.read_csv(params.intermediate_path / f'{record_column}_complete.csv')
 
     dates_col = [f'p{params.HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0, int(df_single_record[f'{record_column}_uniq_count'].max()))]
-    # convert the dates to datetime (following chunk of code should always be run)
 
+    # convert the dates to datetime (following chunk of code should always be run)
     for col in dates_col:
         df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
-
-    list_columns = ['all_icd_first_3', 'icd_parent_coding', 'icd_chapter_coding','phecode','diseases_within_window_phecode_selected','diseases_within_window_phecode_selected_category']
+    # convert list type columns to list
+    list_columns = [f'{record_column}_first_3',f'{record_column}_icd_codes', 'icd_parent_coding', 'icd_chapter_coding','phecode','diseases_within_window_phecode_selected','diseases_within_window_phecode_selected_category']
     for column in list_columns:
-        df_single_record[column] = df_single_record[column].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None)
+        if column in df_single_record.columns.tolist():
+            df_single_record[column] = df_single_record[column].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None)
     return dates_col,df_single_record
 
 
@@ -333,7 +334,7 @@ def map_icd_to_phecode(icd_codes,df_phemap):
                 else:
                     phecode.append(rows.values[0])
             else:
-                # if the icd code is not in the phemap, then we record it as its original but plu tails to recognise them
+                # if the icd code is not in the phemap, then we record it as its original but put tails to recognise them
                 phecode.append(f'{icd_code}.4444')
         if len(icd_codes) == len(phecode):
             return phecode

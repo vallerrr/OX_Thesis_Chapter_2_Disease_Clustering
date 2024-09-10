@@ -6,10 +6,18 @@ steps and thoughts: @16 Jun 2024
 after searching for different resources, the phemap is the most suitable resource for the following reasons:
 1. it is a package that is applicable to the UKBB data
 2. it provides an overall map instead of a specific map for a specific/limited range of diseases
-and the stpes will be: 
+and the steps will be:
 1. mapping all the diseases to the phenotype codes
 2. exam the unmatched codes and check the missing rate/prevalence 
 3. decide the diseases which we want to exam on (threshold)
+
+steps and thoughts: @08 Sep 2024
+we will choose chronic diseases in the phecodes based on the CCIR v2024-1 file and only keep the diseases that are in the final list
+1. match the phecodes with the chronic conditions
+2. only keep diseases that are !before! the survey date
+steps:
+1. identify the chronic diseases in the phecodes based on their ICD codes
+2. identify the dates of the diseases and only keep the diseases that are before the survey date
 """
 import pandas as pd
 from src import params
@@ -17,7 +25,7 @@ from src.data_preprocess import utils
 import ast
 import warnings
 warnings.filterwarnings("ignore")
-record_column = 'all_icd'
+record_column = params.disease_record_column
 access_date_column = '53'
 HES_ICD_ids = params.HES_ICD_ids
 
@@ -37,74 +45,79 @@ df_phemap.reset_index(drop=True, inplace=True)
 #df_single_record['diseases_within_window_phecode'] = [ast.literal_eval(x) if pd.notnull(x) and str(x) != "[]" else None for x in df_single_record['diseases_within_window_phecode']]
 #df_single_record['phecode'] = [ast.literal_eval(x) if pd.notnull(x) and str(x) != "[]" else None for x in df_single_record['phecode']]
 # =============================================================================
-# 1. mapping
+# 1. mapping ICD to Phecode and select the diseases within the window
 # =============================================================================
 
-# 1.1 map the all_icd column to a standard 3/4 digit ICD code
-df_single_record[f'{record_column}_codes'] = [[m.split(' ')[0] for m in ast.literal_eval(x)] if pd.notnull(x) else None for x in df_single_record[record_column]]
-
-# 1.2 map the ICD codes to phecode
-df_single_record['phecode'] = df_single_record[f'{record_column}_codes'].apply(utils.map_icd_to_phecode, args=(df_phemap,))
+# 1.0 map the ICD codes to phecode
+df_single_record['phecode'] = df_single_record[f'{record_column}_icd_codes'].apply(utils.map_icd_to_phecode, args=(df_phemap,))
 df_single_record['phecode_len'] = df_single_record['phecode'].apply(lambda x: len(x) if str(x)!='None' else 0)
 df_single_record['phecode'] = [[[float(n) if not str(n).endswith('4444') else n for n in m ] if isinstance(m,list) else float(m) if not str(m).endswith('4444') else m for m in x] if str(x) not in ["[]",'None'] else None for x in df_single_record['phecode']]
 
-# 1.3 generate *diseases_within_window_phecode* column
-df_single_record[f'diseases_within_window_phecode'] = df_single_record.apply(lambda x: x['phecode'][0:x['index_of_first_disease_out_window']] if x['index_of_first_disease_out_window']!=-1 else None, axis=1)
+# 1.1 generate *diseases_within_window_phecode* column
+df_single_record[f'diseases_within_window_phecode'] = df_single_record.apply(lambda x: x['phecode'][0:x[f'index_of_first_{record_column}_out_window']] if x[f'index_of_first_{record_column}_out_window']!=-1 else None, axis=1)
 
-# =============================================================================
-# 2. check the missing rate of the diseases
-# =============================================================================
+# -----------------------------------------------------------------------------
+# 1.2. check the missing rate of the diseases
+# -----------------------------------------------------------------------------
 
-# 2.1 manual matches for the unmatched diseases
+# 1.2.1 manual matches for the unmatched diseases
+
 #          note: I48.9.4444 and A09.9.4444 are not included in the phemap -> manually add them
-# 2.1.1 I48.9 Atrial fibrillation and atrial flutter, unspecified ->427.20000,Atrial fibrillation and flutter
-# 2.1.2 A09.9 Gastroenteritis and colitis of unspecified origin -> 8,Intestinal infection
+# 1.2.1.1 I48.9 Atrial fibrillation and atrial flutter, unspecified ->427.20000,Atrial fibrillation and flutter
+# 1.2.1.2 A09.9 Gastroenteritis and colitis of unspecified origin -> 8,Intestinal infection
 
-df_single_record['phecode'] = [str(x).replace('I48.9.4444','427.20000').replace('A09.9.4444','8.00000') for x in df_single_record['phecode']]
-df_single_record['diseases_within_window_phecode'] = [str(x).replace('I48.9.4444','427.20000').replace('A09.9.4444','8.00000') for x in df_single_record['diseases_within_window_phecode']]
+# those codes are added in the phemap file, we don't need extra manual matches
+# df_single_record['phecode'] = [str(x).replace('I48.9.4444','427.20000').replace('A09.9.4444','8.00000') for x in df_single_record['phecode']]
+# df_single_record['diseases_within_window_phecode'] = [str(x).replace('I48.9.4444','427.20000').replace('A09.9.4444','8.00000') for x in df_single_record['diseases_within_window_phecode']]
 
-# 2.1.3 changes we made: we should code depression into a seperate phecode (because it is a common disease and social factors could play important role in it)
-for ICD_code in ['F32','F32.0','F32.1','F32.2','F32.3','F32.9']:
-    df_phemap.loc[len(df_phemap)] = [ICD_code,296.20000,'295-306.99','psychological disorders']
+# 1.2.1.3 changes we made: we should code depression into a seperate phecode (because it is a common disease and social factors could play important role in it)
+# for ICD_code in ['F32','F32.0','F32.1','F32.2','F32.3','F32.9']:
+#     df_phemap.loc[len(df_phemap)] = [ICD_code,296.20000,'295-306.99','psychological disorders']
 
-df_phemap.to_csv(params.ICD_path/ 'Phecode_map_v1_2_icd10_beta.csv',index=False)
-for x in ['F32','F32.0','F32.1','F32.2','F32.3','F32.9']:
-    df_single_record['phecode'] = [str(x).replace(f'{x}.4444,','296.20000,') for x in df_single_record['phecode']]
+# df_phemap.to_csv(params.ICD_path/ 'Phecode_map_v1_2_icd10_beta.csv',index=False)
+# for x in ['F32','F32.0','F32.1','F32.2','F32.3','F32.9']:
+#     df_single_record['phecode'] = [str(x).replace(f'{x}.4444,','296.20000') for x in df_single_record['phecode']]
 
-# 2.2 get the prevalence of the diseases
+# 1.2.2 get the prevalence of the diseases -> df_phe
 phe_codes_all = df_single_record['diseases_within_window_phecode'].dropna().explode().explode().unique().tolist()
 while None in phe_codes_all:
     phe_codes_all.remove(None)
 
 df_phe = pd.DataFrame(columns=['phecode', 'prev'])
-df_phe['phecode'] = [float(p) if not str(p).endswith('.4444') else p for p in phe_codes_all]  # 4128 phecodes in total
+df_phe['phecode'] = [float(p) if not str(p).endswith('.4444') else p for p in phe_codes_all]
 
-# df_phe['phecode'] = phe_codes_all
+# 4128 phecodes in total for all_icd
+# 3397 phecodes in total for main_icd
+
 # get the prevalence of the diseases
-phe_db = df_single_record['diseases_within_window_phecode'].dropna().explode().explode().tolist()  # 1446739
+phe_db = df_single_record['diseases_within_window_phecode'].dropna().explode().explode().dropna().tolist()
+# 1446739 all_icd, 846452 main_icd (including unmatched diseases)
 
 
-# how many of the None (unmatched) situations in our case?
-# phe_db.count('.4444')  # from 106259 to 88292, as we have re-defined the 3 phenotypes
+# check the prevalence of the unmathced diseases
+
+df_phe.loc[df_phe['phecode'].str.endswith('.4444').fillna(False),].sort_values(by='prev').sum()  # 59086 in all_icd, 98662(1907 types) main icd
 
 df_phe['prev'] = [phe_db.count(p) for p in df_phe['phecode']]  # don't forget the comma
+df_phe.dropna(inplace=True)
 df_phe['category'] = [df_phe_db[df_phe_db['phecode'] == float(p)]['category'].values[0] if isinstance(p,float) else None for p in df_phe['phecode']]
 
-# deal with the self-defined diseases
-# 'I48.9.4444','427.20000'
-for (A,B) in [['I48.9.4444','427.2'],['A09.9.4444','8.0']]:
-    df_phe.loc[df_phe['phecode']==B,'prev']+=df_phe.loc[df_phe['phecode']==A,'prev'].values[0]
-    df_phe.drop(df_phe.loc[df_phe['phecode']==A].index,inplace=True)
 
+
+
+# max disease prev = 3359 in main_icd, mainly from Z30,z09 etc, can be removed as they are not diseases
 
 df_single_record.to_csv(params.intermediate_path / f'{record_column}_complete.csv', index=False)
 df_phe.to_csv(params.intermediate_path / f'{record_column}_phecode.csv', index=False)
+
+
 # --------------------------------------------------------------------------------------------------
 df_phe = pd.read_csv(params.intermediate_path / f'{record_column}_phecode.csv')
 
 # as we have checked the unmatched situations in the appendix, we can drop the cases ending with .4444 in the diseases window in df_single_record
 
 df_single_record['diseases_within_window_phecode'] = [utils.clean_unmatched_ICD(x) if str(x) not in params.nan_str else None for x in df_single_record['diseases_within_window_phecode']]
+# they are replaced by None, so the position still represents the time order
 
 # ==============================================================================
 # 3. mapping the chronic conditions based on the CCIR v2024-1
@@ -117,11 +130,20 @@ df_ccir['ICD_10_CM_CODE']=[str(x).replace("'",'') for x in df_ccir['ICD_10_CM_CO
 
 # match the phemap with the chronic indicators
 df_phemap['ICD10'] = [str(x).replace(".","") for x in df_phemap['ICD10']]
-df_phemap = pd.merge(left=df_ccir[['ICD_10_CM_CODE', 'CHRONIC_INDICATOR']],right=df_phemap,left_on='ICD_10_CM_CODE', right_on='ICD10',how='right')  #
+df_phemap = pd.merge(left=df_ccir[['ICD_10_CM_CODE', 'CHRONIC_INDICATOR']], right=df_phemap, left_on='ICD_10_CM_CODE', right_on='ICD10', how='right')  #
 df_phemap['CHRONIC_INDICATOR'].isnull().sum()  # 4564 phecode does not have corresponding chronic condition definition
 
 # new column: diseases_within_window_phecode
 df_single_record['diseases_within_window_phecode_chronic'] = [[utils.return_chronoic_code(m, df_phemap) for m in x] if str(x) not in params.nan_str else None for x in df_single_record['diseases_within_window_phecode']]
+
+# difference between CCIR v2024-1 and the file Marcus has sent
+df_chronic = pd.read_csv(params.ICD_path/'adjusted_chronic_ICD.txt', sep=" ")  #
+# df_ccir['ICD_10_2_digits'] = [x if len(x)==3 else None for x in df_ccir['ICD_10_CM_CODE']] this won't work as the ICD_10_CM_CODE don't have sufficient ditigs 2 data
+df_ccir['ICD_10_2_digits'] = [x[0:3]  for x in df_ccir['ICD_10_CM_CODE']]
+temp = df_ccir.groupby('ICD_10_2_digits').sum().reset_index()
+df_chronic=df_chronic.merge(df_ccir[['ICD_10_2_digits','CHRONIC_INDICATOR']],left_on='digit_3',right_on='ICD_10_2_digits',how='left')
+# conclusion: the file provided by Marcus mainly look at the 3 digits of the ICD codes, while the CCIR file look at the 4 digits of the ICD codes
+# the CCIR file is more detailed and more suitable for our case, also there are some mismatches between the two files
 
 # =============================================================================
 # 4. generate the disease database based on the diseases prevalence
@@ -129,14 +151,20 @@ df_single_record['diseases_within_window_phecode_chronic'] = [[utils.return_chro
 #       standardise the prevalence based on the age groups
 
 # =============================================================================
-
+# 4.1 generate the disease database based on the diseases prevalence
 chronic_control = ['_chronic',''][0]
 df_single_record[f'diseases_within_window_phecode{chronic_control}'] = [ast.literal_eval(x) if pd.notnull(x) and str(x) not in params.nan_str else None for x in df_single_record[f'diseases_within_window_phecode{chronic_control}']]
 
-phe_db =[x for x in df_single_record[f'diseases_within_window_phecode{chronic_control}'].dropna().explode().explode().tolist() if pd.notnull(x)]  # 1401045 in total, 275329 not null
-phe_db = list(set(phe_db))  # 298 unique chronic conditions
-df_phe_chronic_with_age = pd.DataFrame(columns=['age', 'gender','phe','count'])
+phe_db_all =[x for x in df_single_record[f'diseases_within_window_phecode{chronic_control}'].dropna().explode().explode().tolist() if pd.notnull(x)]  # 275329 not null in all_icd, 108287 in main_icd
+phe_db = list(set(phe_db_all))  # 298 in all_icd, 291 in main_icd unique chronic conditions
+df_phe_chronic = pd.DataFrame(columns=['phe','count'])
+df_phe_chronic['phe'] = phe_db
+df_phe_chronic['count'] = [phe_db_all.count(p) for p in phe_db]
 
+
+"""
+# standardise to the UK population
+df_phe_chronic_with_age = pd.DataFrame(columns=['age', 'gender','phe','count'])
 age_range = range(40, 71)
 for age in age_range:
     for gender in [0,1]:
@@ -149,7 +177,7 @@ for age in age_range:
             phe_count = phes.count(phe)
             df_phe_chronic_with_age.loc[len(df_phe_chronic_with_age),] = [age,gender,phe,phe_count]
 
-# standardise to the UK population
+
 df_single_pop = df_single_record[['21022','31']].groupby(['21022','31']).size().reset_index(name='count')
 df_single_pop=df_single_pop.loc[df_single_pop['21022'].isin(list(age_range)),] # only keep the age range from 40 to 70
 
@@ -191,20 +219,26 @@ for age in age_range:
 # save the phe code database that are chronic
 df_phe_chronic_with_age.to_csv(params.intermediate_path / f'{record_column}_phecode{chronic_control}.csv', index=False)
 
-
 # generate df_phe based on the df_phe_chronic_with_age
-if chronic_control == '_chronic': # 298 different diseases
-    df_phe = df_phe_chronic_with_age.groupby('phe',as_index=False).sum()[['phe','count']]
-    df_phe.rename(columns={'count':'prev','phe':'phecode'},inplace=True)
-# set threshold to 1000 cases? (prev 4349, 991 when looking at chronic diseases)
-threshold = 0.0036 * sum(df_phe['prev'])
-temp = df_phe.loc[df_phe['prev'] > threshold]  # 63 diseases, 42 when look at chronic diseases
+#if chronic_control == '_chronic': # 298 different diseases
+#    df_phe_chronic = df_phe_chronic_with_age.groupby('phe',as_index=False).sum()[['phe','count']]
+#    df_phe_chronic.rename(columns={'count':'prev','phe':'phecode'},inplace=True)
+"""
 
-lst_final_phecodes = df_phe.loc[df_phe['prev'] > threshold,'phecode'].tolist()
+df_phe_chronic.rename(columns={'count':'prev','phe':'phecode'},inplace=True)
+# set threshold to 1000 cases? (prev 4349, 991 when looking at chronic diseases)  108287 total in main_icd, 500 cases 4.6% of the total cases
+threshold = 500
+temp = df_phe_chronic.loc[df_phe_chronic['prev'] > threshold]  # 63 diseases, 42 when look at chronic diseases; 35 diseases with prev > 500 in main_icd
+temp['category'] = [df_phe_db[df_phe_db['phecode'] == float(p)]['category'].values[0] if isinstance(p,float) else None for p in temp['phecode']]
+
+lst_final_phecodes = df_phe_chronic.loc[df_phe_chronic['prev'] > threshold,'phecode'].unique().tolist()
 
 # [165.1, 365.0, 558.0, 250.2, 272.11, 366.0, 401.1, 208.0, 218.1, 366.2, 285.0, 411.8, 530.1, 550.2, 563.0, 172.2, 185.0, 272.1, 351.0, 411.1, 411.3, 411.4, 411.2, 716.9, 79.0, 455.0, 495.0, 112.0, 300.1, 519.8, 496.0, 317.0, 318.0, 296.2, 41.4, 244.4, 535.0, 994.2, 38.0, 41.0, 172.11, 278.1, 327.3, 427.2, 280.1, 174.11, 198.1, 722.9, 785.0, 454.1, 562.1, 535.8, 530.14, 530.11, 216.0, 153.2, 214.1, 41.1, 276.5, 427.2, 550.1, 716.2, 578.8]
 # chronic diseases: [153.3, 165.1, 185.0, 198.3, 198.4, 244.1, 244.4, 252.1, 272.1, 272.11, 275.5, 281.11, 332.0, 334.0, 335.0, 357.0, 362.4, 394.3, 395.1, 401.1, 411.1, 411.4, 414.0, 416.0, 426.21, 426.31, 426.32, 433.0, 433.31, 443.9, 530.14, 565.1, 593.0, 599.4, 618.2, 624.9, 626.12, 627.1, 634.0, 697.0, 740.11, 747.13]
+# chronic diseases in main_icd with threshold = 500, [530.14, 530.3, 557.1, 565.1, 593.0, 596.1, 599.4, 612.2, 614.1, 618.2, 619.2, 619.3, 619.4, 622.2, 624.9, 626.13, 626.12, 627.1, 626.14, 625.0, 634.0, 153.3, 185.0, 701.0, 709.7, 728.71, 740.11, 335.0, 395.1, 401.1, 411.1, 411.4, 433.31, 443.9, 1002.0]
 
+#manual delete some codes
+lst_final_phecodes.remove(1002.0) # it does not have parent chapter, Symptoms concerning nutrition, metabolism, and development
 # for the column diseases_within_window_phecode, we only keep the diseases that are in the lst_final_phecodes
 phes = pd.DataFrame(df_single_record[f'diseases_within_window_phecode{chronic_control}'].explode().explode())
 phes['index'] = phes.index
@@ -219,11 +253,13 @@ df_single_record[f'diseases_within_window_phecode_selected{chronic_control}'] = 
 # mark the chapter level of phecodes (category)
 phe_cate_dict = params.phe_cate_dict
 def return_category(row,df_phe_db):
+    print(row)
     if pd.notnull(row):
         return phe_cate_dict[df_phe_db.loc[df_phe_db['phecode'] == float(row),'category'].values[0]]
     return None
 
-df_single_record[f'diseases_within_window_phecode_selected_category{chronic_control}'] = [[return_category(m,df_phe_db) for m in x] if str(x) not in ['None','nan'] else None for x in df_single_record[f'diseases_within_window_phecode_selected{chronic_control}']]
+df_single_record[f'diseases_within_window_phecode_selected_category{chronic_control}'] = [[return_category(m,df_phe_db) for m in x] if str(x) not in params.nan_str else None for x in df_single_record[f'diseases_within_window_phecode_selected{chronic_control}']]
+
 temp = df_single_record[f'diseases_within_window_phecode_selected_category{chronic_control}']
 
 #  phe_cate_dict = {cat:i for cat,i in zip(df_phe_db['category'].dropna().unique().tolist(),range(1,len(df_phe_db['category'].dropna().unique().tolist())+1))}

@@ -14,10 +14,10 @@ from pathlib import Path
 
 warnings.filterwarnings('ignore')
 # 1. Load the data
+record_column = params.disease_record_column
 wave_codebook_path = params.codebook_path / f'UKB_var_select.csv'
 df_codebook = pd.read_csv(wave_codebook_path)
 df_codebook.preprocessed_flag.value_counts()
-intermediate_path = Path('/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/intermediate_files')
 
 HES_ICD_ids = {"all_icd": {"id": '41270', "time": '41280'},
                "main_icd": {"id": '41202', "time": '41262'},
@@ -27,8 +27,7 @@ HES_ICD_ids = {"all_icd": {"id": '41270', "time": '41280'},
 # 2. Hospital Inpatient (HES)
 # ------------------------------------------------------------------------------------------------------------------
 
-
-# read the data for each cat
+# read the data for each cat and mark the unique count
 df_disease = pd.DataFrame()
 for key, value in HES_ICD_ids.items():
     print()
@@ -47,35 +46,20 @@ for key, value in HES_ICD_ids.items():
     df_disease[f'{key}_uniq_count'] = [len(ast.literal_eval(x)) if pd.notnull(x) else None for x in df_disease[f'p{field_id}']]
     print(df_disease[f'{key}_uniq_count'].describe())
 
-# replace all ICD codes with the first 4 characters
+# replace all ICD codes with their characters
 
 for key in HES_ICD_ids.keys():
-    df_disease[f'{key}_first_3'] = df_disease[f'p{HES_ICD_ids[key]["id"]}'].apply(lambda x: [str(y)[:3] for y in ast.literal_eval(x)] if pd.notnull(x) else None)
-
-
-# ------------------------------------------------------------------------------------------------------------------
-# * create a dictionary for the disease 4 Codes:disease names (this is the most detailed level of the ICD codes)
-# ------------------------------------------------------------------------------------------------------------------
-ICD_disease_dict = {}
-for key in HES_ICD_ids.keys():
-    diseases = df_disease[f'p{HES_ICD_ids[key]["id"]}'].apply(lambda x: ast.literal_eval(x) if pd.notnull(x) else None).explode().unique()
-    for disease in diseases:
-        if pd.notnull(disease):
-            disease_digits = str(disease)[:5]
-            if disease_digits not in ICD_disease_dict.keys():
-                    ICD_disease_dict[disease_digits] = [disease.replace(disease_digits, '')]
-            else:
-                if ICD_disease_dict[disease_digits][0] != disease.replace(disease_digits, ''):
-                    ICD_disease_dict[disease_digits].append(disease.replace(disease_digits, ''))
+    df_disease[f'{key}_icd_codes'] = df_disease[f'p{HES_ICD_ids[key]["id"]}'].apply(lambda x: [str(y).split(' ')[0] for y in ast.literal_eval(x)] if pd.notnull(x) else None)
 
 
 # ------------------------------------------------------------------------------------------------------------------
 # 3. ICD10 code file (coding19.tsv)
+#    one can skip this step if the file is already created
+#    it will not affect result
 # ------------------------------------------------------------------------------------------------------------------
-key = list(HES_ICD_ids.keys())[0]
-df_disease[f'{key}_uniq_count'].hist(bins=100)
+
+df_disease[f'{record_column}_uniq_count'].hist(bins=100)
 plt.show()
-temp = df_disease.icd10_uniq_count.value_counts().reset_index().sort_values(by='count', ascending=True)
 
 ICD_file_path ="/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/downloaded_data/ICD_10/coding19.tsv"
 df_ICD = pd.read_csv(ICD_file_path, sep='\t')
@@ -98,17 +82,15 @@ def tag_row_type(row):
         return 'error'
 
 df_ICD['type'] = df_ICD.apply(lambda x: tag_row_type(x), axis=1)
-df_ICD.to_csv(intermediate_path / 'ICD_10.csv', index=False)
+df_ICD.to_csv(params.intermediate_path / 'ICD_10.csv', index=False)
 df_ICD['type'].value_counts()
 
 # ------------------------------------------------------------------------------------------------------------------
-# 4 dates for a single df
+# 4. dates for a single df
 # ------------------------------------------------------------------------------------------------------------------
-# 1. codes to generate the file (main_icd_complete.csv and all_icd_complete.csv)
-record_column = 'all_icd'
-df_single_record = df_disease[['eid',f'{record_column}_first_3', f'{record_column}_uniq_count']]
-dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x}' for x in range(0,int(df_single_record[ f'{record_column}_uniq_count'].max()))]
-columns = ['eid',f'{record_column}_first_3', f'{record_column}_uniq_count']+dates_col
+df_single_record = df_disease[['eid',f'p{HES_ICD_ids[record_column]["id"]}',f'{record_column}_icd_codes', f'{record_column}_uniq_count']]
+dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0,int(df_single_record[ f'{record_column}_uniq_count'].max()))]
+columns = ['eid',f'{record_column}_icd_codes', f'{record_column}_uniq_count']+dates_col
 
 field_id = HES_ICD_ids[record_column]['time']
 ind = df_codebook.loc[df_codebook['field_id'] == int(field_id)].index[0]
@@ -116,83 +98,84 @@ row = df_codebook.loc[ind, ]
 
 df_single_record = pd.merge(df_single_record, utils.data_reader(row), on='eid')
 df_single_record = df_single_record[columns]
-df_single_record.to_csv(intermediate_path / f'{record_column}_complete.csv', index=False)
-
-# 2. reads the file
-df_single_record = pd.read_csv(intermediate_path / f'{record_column}_complete.csv')
-for col in dates_col:
-    df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
-
+df_single_record.to_csv(params.intermediate_path / f'{record_column}_complete.csv', index=False)
 
 # ------------------------------------------------------------------------------------------------------------------
-#  Create an empty dictionary to store the dataframes
-value_counts_dict = {}
-# Iterate over each column in df_read
-for column in df_read.columns:
-    # Get value counts for each unique value in the column
-    value_counts = df_read[column].value_counts()
-    # Convert the series to a dataframe
-    value_counts_df = value_counts.reset_index()
-    # Rename the columns
-    value_counts_df.columns = [column, 'count']
-    # Store the dataframe in the dictionary
-    value_counts_dict[column] = value_counts_df
-
-
-df_all_dates = pd.DataFrame()
-
-# Iterate over each dataframe in the dictionary
-for column, df in value_counts_dict.items():
-    # Append the dataframe to the list
-    df.rename(columns={column:'date'}, inplace=True)
-    df_all_dates= pd.concat([df_all_dates, df], axis=0)
-
-# df_all_dates['date'] = pd.to_datetime(df_all_dates['date'], errors='coerce')
-df_date_counts = df_all_dates.groupby('date')['count'].sum().reset_index()
-
-# Rename the columns
-df_date_counts.columns = ['date', 'total_count']
-df_date_counts.plot(x='date', y='total_count', kind='line', linewidth=0.1)
-
-df_date_counts['date'] = pd.to_datetime(df_date_counts['date'], errors='coerce')
-
-# smooth the total_count by week
-df_date_counts['date'].describe()
-# find the date that is missing from the date range
-date_range = pd.date_range(start='1995-03-28', end='2022-10-31')
-missing_dates = date_range[~date_range.isin(df_date_counts['date'])]
-
-df_date_counts['total_count_smooth'] = df_date_counts['total_count'].rolling(window=7).mean()
-df_date_counts['total_count_smooth'].plot(kind='line',linewidth=0.1)
-
-
+# 5. index_of_first_disease_out_window
 # ------------------------------------------------------------------------------------------------------------------
-# disease prevalence using #all_icd
-# ------------------------------------------------------------------------------------------------------------------
-def count_disease(x, disease):
-    if str(x) == 'None':
-        return 0
+# 5.0 read and concat the access date
+access_date_column ='53'
+ind = df_codebook.loc[df_codebook['field_id'] == int(access_date_column)].index[0]
+row = df_codebook.loc[ind,]
+temp = utils.data_reader(row)
+
+df_single_record = df_single_record.merge(left_on='eid',right=temp[['eid',f'p{access_date_column}_i0']].rename(columns={f'p{access_date_column}_i0':f'{access_date_column}'}),right_on='eid',how='inner')
+df_single_record[access_date_column] = pd.to_datetime(df_single_record[access_date_column], errors='coerce', format='%Y-%m-%d')
+
+# 5.1 retrieve gender and age on the df_single_record
+import numpy as np
+columns_to_remain = ['eid', '21022', '31']
+df_read = pd.read_csv(params.preprocessed_path / 'UKB_wave_0_Socio-demographics_0.csv')
+df_read = df_read[columns_to_remain]
+df_single_record = pd.merge(df_read, df_single_record, on='eid', how='left')
+
+temp = df_single_record.copy()
+# sort the date columns
+temp = temp[columns_to_remain + [ f'{record_column}_uniq_count', f'{record_column}_icd_codes',access_date_column] + dates_col]
+
+# 5.2 sort the diseases by dates, change the order of dates columns
+# 5.2.1 reorder the diseases based on their corresponding date
+
+dates_df = temp[dates_col].copy()
+sorted_indices = dates_df.apply(np.argsort, axis=1)
+
+def sort_by_indices(list_, index):
+    if str(list_) in params.nan_str:
+        return None
     else:
-        return x.count(disease)
+        indices = sorted_indices.loc[index].values[:len(list_)]
 
-df_disease_prev = pd.DataFrame()
-filed_name = 'all_icd'
-field_id = HES_ICD_ids['all_icd']['id']
-uniq_diseases = df_disease[f'{filed_name}_first_4'].explode().unique()
-disease_dict = {}
+        sorted_list = [list_[i] for i in indices]
 
-for disease in uniq_diseases:
-    count = df_disease[f'{filed_name}_first_4'].apply(lambda x: count_disease(x, disease)).sum()
-    disease_dict[disease] = count
-    df_disease_prev[disease] = [count]
+        return sorted_list
 
-df_disease_prev.to_csv(intermediate_path / 'disease_prevalence_4_digits.csv', index=False)
 
-df_disease_prev = df_disease_prev.T.reset_index()
+# Apply the function to the 'diseases' column
+temp[f'{record_column}_icd_codes'] = temp.apply(lambda row: sort_by_indices(row[f'{record_column}_icd_codes'], row.name) if str(row) != 'None' else None, axis=1)
 
-df_disease_prev.rename(columns={'index':'disease_4', 0:'count'}, inplace=True)
-df_disease_prev.drop(df_disease_prev.loc[df_disease_prev['disease_4']=='Unnamed: 22'].index, inplace=True)
+# 5.2.2 Apply the function fo the dates columns
+dates_sorted = temp.apply(lambda row: sort_by_indices(row[dates_col], row.name), axis=1)
+dataframes = [pd.DataFrame(dates_sorted[i]).T for i in range(len(dates_sorted))]
+m = pd.concat(dataframes)
+m.columns = dates_col
+m.reset_index(drop=True, inplace=True)
+temp[dates_col] = m[dates_col]
+df_single_record = temp.copy()
 
-df_disease_prev['diseases_1'] = df_disease_prev['disease_4'].apply(lambda x: str(x)[0])
-df_disease_prev['diseases_2'] = df_disease_prev['disease_4'].apply(lambda x: int(str(x)[1:3]))
-df_disease_prev['diseases_3'] = df_disease_prev['disease_4'].apply(lambda x: str(x)[:3])
+
+# 5.3 find the index of the first disease out of the window
+def find_index(row):
+    entry_date = row[access_date_column]
+    unique_dis = row[f'{record_column}_uniq_count']
+    max_index = -1
+    if pd.notnull(unique_dis):
+        for index in range(0,int(unique_dis)):
+            date_col = f'p{HES_ICD_ids[record_column]["time"]}_a{index:03d}'
+            if pd.notnull(row[date_col]):
+                if pd.to_datetime(row[date_col], errors='coerce', format='%Y-%m-%d')<=entry_date:
+                    max_index = index
+                else:
+                    break
+            else:
+                break
+
+    return max_index
+
+
+df_single_record[f'index_of_first_{record_column}_out_window'] = df_single_record.apply(lambda row: find_index(row), axis=1)
+# note that the index is actually, the index of the last disease within the window, so we need to add 1 to it in using it in the model (when it's not -1)
+df_single_record[f'index_of_first_{record_column}_out_window'] = [x+1 if x!=-1 else x for x in df_single_record[f'index_of_first_{record_column}_out_window']]
+
+
+df_single_record.to_csv(params.intermediate_path / f'{record_column}_complete.csv', index=False)
+

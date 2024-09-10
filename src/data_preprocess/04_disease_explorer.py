@@ -1,5 +1,4 @@
 import os.path
-
 import pandas as pd
 from src import params
 from pathlib import Path
@@ -13,8 +12,8 @@ import polars as pl
 from prefixspan import PrefixSpan
 warnings.filterwarnings('ignore')
 
-
-record_column = 'all_icd'
+chronic_control = ['_chronic',''][0]
+record_column = params.disease_record_column
 HES_ICD_ids = {"all_icd": {"id": '41270', "time": '41280'}, "main_icd": {"id": '41202', "time": '41262'}, "second_icd": {"id": '41203', "time": None}}
 intermediate_path = Path('/Users/valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/intermediate_files')
 df_codebook = pd.read_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0.csv')
@@ -30,9 +29,6 @@ dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0,
 # convert the dates to datetime (following chunk of code should always be run)
 for col in dates_col:
     df_single_record[col] = pd.to_datetime(df_single_record[col], errors='coerce', format='%Y-%m-%d')
-df_single_record[record_column+'_first_3'] = [ast.literal_eval(x) if pd.notnull(x) else None for x in df_single_record[record_column+'_first_3']]
-df_single_record_pl = pl.DataFrame(df_single_record)
-
 
 # ------------------------------------------------------------------------------------------------------------------
 # 1 define comorbidity
@@ -65,6 +61,7 @@ df_disease_prev = pd.DataFrame()
 filed_name = record_column
 
 # 2.1. generate the df_disease_prev
+
 uniq_diseases = df_single_record[f'{filed_name}_first_3'].explode().unique()
 
 disease = uniq_diseases[0]
@@ -153,7 +150,6 @@ fig.tight_layout()
 
 plt.savefig(params.current_path / f'plot/{record_column}_disease_prevalence_by_year_and_chapter.pdf')
 
-
 # --------------------------------------------------------------
 # 3 disease prevalence using #all_icd
 # --------------------------------------------------------------
@@ -173,9 +169,6 @@ df_comorbidity['frequency'] = [x[0] for x in trial]
 df_comorbidity['disease'] = [x[1] for x in trial]
 df_comorbidity['disease_count'] = [len(x) for x in df_comorbidity['disease']]
 df_comorbidity.drop(df_comorbidity.loc[df_comorbidity['disease_count']==1].index, inplace=True)
-
-# polars library
-
 
 # --------------------------------------------------------------
 # analysis at the chapter & individual level
@@ -218,6 +211,6 @@ df_disease_pattern_by_chapter = pl.read_csv(intermediate_path / f'{record_column
 
 
 # --------------------------------------------------------------
-# 4 analysis for diseases occured during the research window
+# 4 analysis for diseases occur during the research window
 # --------------------------------------------------------------
 year_window = [2006, 2010]

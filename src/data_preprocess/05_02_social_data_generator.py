@@ -1089,12 +1089,10 @@ import polars as pl
 df = pd.read_pickle(final_data_path / 'UKB_wave_0_final_non_standardised.pkl')
 
 for column in df.columns:
-    if column != 'eid':
-        if column == '53': # date of attending assessment centre
-            continue
-        else:
-            df[column] = df[column].astype(float)
-
+    if column == '53': # date of attending assessment centre
+        continue
+    else:
+        df[column] = df[column].astype(float)
         df[column] = (df[column] - df[column].mean()) / df[column].std()
     print(column,df[column].mean(), df[column].std())
 

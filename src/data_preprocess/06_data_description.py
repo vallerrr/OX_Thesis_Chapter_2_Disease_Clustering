@@ -15,18 +15,22 @@ import pandas as pd
 df_codebook_final = pd.read_csv(params.codebook_path / 'UKB_preprocess_codebook_wave_0_final.csv')
 df = pd.read_pickle(params.final_data_path / 'UKB_wave_0_final_standardised.pkl')
 
-# ======================================================================================================================
-# 0. combine disease information from the specific time window
-# ======================================================================================================================
-record_column = 'all_icd'
+record_column = params.disease_record_column
 access_date_column = '53'
 HES_ICD_ids = params.HES_ICD_ids
-level = 'phecode_cate'
-
+level = 'chronic_cate'
+weight_control = False
 
 # control zone
 chapter_ranges = [x for x in range(1, 16)]+[19] if 'chapter' in level else [x for x in range(1, 18)]
 disease_column = params.disease_columns_dict[level]
+
+
+# ======================================================================================================================
+# 0. combine chronic disease information from the specific time window
+# ======================================================================================================================
+
+
 
 # read the single record file and merge the date columns to the single record file
 
@@ -36,7 +40,7 @@ df_single_record = pd.merge(df_single_record, df[[access_date_column, 'eid']], h
 
 
 # only select columns before the interview date (in column access_date_column)
-def find_first_date(row):
+'''def find_first_date(row):
     """
     find the first date that is out of the window
     :param row:
@@ -57,17 +61,16 @@ def find_first_date(row):
 df_single_record['index_of_first_disease_out_window'] = df_single_record.apply(find_first_date, axis=1)
 
 for column in list(params.disease_columns_dict.values()):
-    df_single_record[column] = df_single_record.apply(lambda x: x[column][0:x['index_of_first_disease_out_window']] if x['index_of_first_disease_out_window']!=-1 else None, axis=1)
+    if column in df_single_record.columns.tolist():
+        print(column)
+        df_single_record[column] = df_single_record.apply(lambda x: x[column][0:int(x[f'index_of_first_{record_column}_out_window'])] if x[f'index_of_first_{record_column}_out_window']!=-1 else None, axis=1)
+'''
 
 # merge the new three columns back to the original df
-df = pd.merge(df, df_single_record[['eid']+ list(params.disease_columns_dict.values())], how='left', left_on='eid', right_on='eid')
-
-for column in list(params.disease_columns_dict.values()):
-    df[column] = [x if str(x)!='[]' else None for x in df[column]]
+df = pd.merge(df, df_single_record[['eid','weight'] if weight_control else ['eid']+ [x for x in list(params.disease_columns_dict.values()) if x in df_single_record.columns.tolist()]], how='left', left_on='eid', right_on='eid')
 
 df_single_record.to_csv(params.intermediate_path / f'{record_column}_complete.csv')
 df.to_pickle(params.final_data_path / 'UKB_wave_0_final_standardised_with_disease.pkl')  # this is the file to be used in final analysis
-
 
 
 # ======================================================================================================================
@@ -96,7 +99,7 @@ def find_missing_count(row):
     return missing_count
 
 
-df_descriptive_table['variable_missing_values']= df_descriptive_table.apply(find_missing_count, axis=1)
+df_descriptive_table['variable_missing_values'] = df_descriptive_table.apply(find_missing_count, axis=1)
 df_descriptive_table['variable_missing_values_percentage'] = [x/len(df) for x in df_descriptive_table['variable_missing_values']]
 df_descriptive_table.to_csv(params.final_data_path/'descriptive_table'/'descriptive_table_wave_0.csv',index=False)
 
@@ -108,15 +111,18 @@ df_non_standardised.to_pickle(params.final_data_path / 'UKB_wave_0_final_non_sta
 # ======================================================================================================================
 # 2. generate the disease description
 # ======================================================================================================================
-
+phe_cate_dict = {y:x for x,y in params.phe_cate_dict.items()}
+dates_col, df_single_record = utils.import_df_single_record(record_column)
 df = pd.read_pickle(params.final_data_path/ 'UKB_wave_0_final_non_standardised.pkl')
 if disease_column not in df.columns:
     df = pd.merge(df, df_single_record[['eid', disease_column]], how='left', left_on='eid', right_on='eid')
-# average disease count by age and gender
-
-df[f'{level}_disease_count'] = [len(x) if str(x) not in ['None','nan'] else 0 for x in df[disease_column]]
-
-
+# merge weight to the dataframe
+if weight_control:
+    df = pd.merge(df, df_single_record[['eid', 'weight']], how='left', left_on='eid', right_on='eid')
+#    average disease count by age and gender
+    df[f'{level}_disease_count'] = [len(x)*weight if str(x) not in ['None','nan'] else 0 for x,weight in zip(df[disease_column],df['weight'])]
+else:
+    df[f'{level}_disease_count'] = [len(x) if str(x) not in ['None', 'nan'] else 0 for x in df[disease_column]]
 # ----------------------------------------------------------
 # 2.1 plot: average_disease_count_at_recruitment_all_disease
 # ----------------------------------------------------------
@@ -129,7 +135,7 @@ df_to_plot = df_to_plot.groupby(['31', '21022']).agg(cases_count=(f'{level}_dise
 # set 31 as categorical variable
 df_to_plot['31'] = df_to_plot['31'].astype('category')
 df_to_plot['31'] = df_to_plot['31'].cat.rename_categories(['Female', 'Male'])
-df_to_plot = df_to_plot.loc[(df_to_plot['21022']>=40) & (df_to_plot['21022']<=70),]
+df_to_plot = df_to_plot.loc[(df_to_plot['21022']>=40) & (df_to_plot['21022']<=70),] # delete 40 and 70 as they are severe underpresented
 
 
 fig, ax = plt.subplots()
@@ -138,15 +144,15 @@ colors = ['blue', 'orange']
 # Plot each category with its own color and label
 for i, category in enumerate(df_to_plot['31'].cat.categories):
     df_subset = df_to_plot[df_to_plot['31'] == category]
-    ax.scatter(df_subset['21022'], df_subset['disease_count'], color=colors[i], label=category)
+    ax.scatter(df_subset['21022'], df_subset['disease_count'], color=colors[i], label=category,alpha=0.8)
 
 # Add a legend
 ax.legend(title='Gender')
-plt.title('Average disease count at recruitment')
+plt.title(f'Average chronic disease count at recruitment by age {"(weighted)" if weight_control else ""}')
 plt.xlabel('Age at recruitment')
 plt.ylabel('Average disease count')
-# plt.show()
-plt.savefig(params.current_path/f'plot/{level}/average_disease_count_at_recruitment_all_disease.pdf')
+plt.show()
+plt.savefig(params.current_path/f'plot/{level}/average_disease_count_at_recruitment_{record_column}_{"weighted" if weight_control else ""}.pdf')
 
 
 # ----------------------------------------------------------
@@ -159,19 +165,27 @@ def count_chapter(row):
     if str(row[disease_column]) not in ['None','nan','NaN']:
         chapters = [str(x) for x in row[disease_column]]
         count_dict = Counter(chapters)
+        if 'weight' in row.index.tolist():
+            count_dict = {k: v*row['weight'] for k, v in count_dict.items()}
     else:
         count_dict = None
     return count_dict
 import ast
 df[disease_column] = [ast.literal_eval(x) if str(x) not in params.nan_str else None for x in df[disease_column] ]
-df_to_plot = df[[disease_column, '31', '21022']].copy()
 
+if weight_control:
+    df_to_plot = df[[disease_column, '31', '21022','weight']].copy()
+else:
+    df_to_plot = df[[disease_column, '31', '21022']].copy()
 
 # separate diseases by the chapter name (each chapter will have a separate column)
 df_to_plot['chapter_count'] = df_to_plot.apply(count_chapter, axis=1)
 
+chapter_ranges = df[df[disease_column].notnull()][disease_column].apply(lambda x: [int(y) for y in x]).explode().unique()
+chapter_ranges.sort()
 for column in chapter_ranges:
-    df_to_plot[f'chapter_{column}'] = [x[str(column)] if str(x)!='None' else None for x in df_to_plot['chapter_count']]
+    df_to_plot[f'chapter_{column}'] = [x[str(column)] if isinstance(x, dict) and str(column) in x.keys() else None for x in df_to_plot['chapter_count']]
+
 
 df_plot_2 = df_to_plot.pivot_table(index=['21022', '31'],  values=[f'chapter_{x}' for x in chapter_ranges], aggfunc='sum').reset_index()
 # remove sparse data points that have age below 40 or over 70 (same as the last plot)
@@ -208,15 +222,19 @@ ax2.set_title(gender)
 ax2.set_xlabel('Age at recruitment')
 ax2.set_ylabel('Count of Disease Chapters')
 
+
 handles, labels = ax2.get_legend_handles_labels()  # reverse the order of legend
+labels = [phe_cate_dict[int(str(x).replace('chapter_',''))] for x in labels]
+
 ax2.legend(reversed(handles), reversed(labels), title='Chapter', title_fontsize='large', fontsize='small', loc='center left', bbox_to_anchor=(1.0, 0.5))
 
 fig.suptitle('Diseases chapter count by age and gender')
-plt.savefig(params.current_path/f'plot/{level}/diseases_chapter_count_by_age_and_gender.pdf')
+fig.tight_layout(rect=[0, 0.01, 1, 0.98])
+# plt.show()
 
-#plt.show()
+plt.savefig(params.current_path/f'plot/{level}/diseases_chapter_count_{record_column}_by_age_and_gender{"_weighted" if weight_control else ""}.pdf')
 
-
+# ----------------------------------------------------------
 # 2.2.2 relative counts of the diseases
 df_plot_2['total_diseases'] = df_plot_2[[f'chapter_{x}' for x in chapter_ranges]].sum(axis=1)
 # Calculate the proportion of each chapter
@@ -252,11 +270,15 @@ ax2.set_xlabel('Age at recruitment')
 ax2.set_ylabel('Proportion of Disease Chapters')
 
 handles, labels = ax2.get_legend_handles_labels()  # reverse the order of legend
+labels = [phe_cate_dict[int(str(x).replace('chapter_','').replace('_prop',''))] for x in labels]
 ax2.legend(reversed(handles), reversed(labels), title='Chapter', title_fontsize='large', fontsize='small', loc='center left', bbox_to_anchor=(1.0, 0.5))
 
 fig.suptitle('Diseases chapter count by age and gender (Proportion)')
-plt.savefig(params.current_path/f'plot/{level}/diseases_chapter_proportion_by_age_and_gender.pdf')
+fig.tight_layout(rect=[0, 0.01, 1, 0.98])
 # plt.show()
+
+plt.savefig(params.current_path/f'plot/{level}/diseases_chapter_{record_column}_proportion_by_age_and_gender{"_weighted" if weight_control else ""}.pdf')
+
 
 # ----------------------------------------------------------
 # 2.3 disease occurrence: within chapter (self-repeating rate)
@@ -287,14 +309,14 @@ plt.rcParams["figure.figsize"] = [15, 20]
 gender = 'Male'
 df_subset = df_to_plot[df_to_plot['31'] == gender][['21022'] + [f'chapter_{i}' for i in chapter_ranges]]
 df_subset.set_index('21022', inplace=True)
-df_subset.plot(kind='line',ax=ax1)
+df_subset.plot(kind='line', ax=ax1)
 ax1.set_title(gender)
 ax1.set_xlabel('Age at recruitment')
 ax1.set_ylabel('Count of Disease Chapters')
 for column in df_subset.columns:
     line = ax1.plot(df_subset.index, df_subset[column], label=column)
     last_x, last_y = df_subset.index[-1], df_subset[column].iloc[-1]
-    ax1.text(last_x, last_y, f'{column}', fontsize=12, verticalalignment='center')
+    ax1.text(last_x, last_y, phe_cate_dict[int(f'{column}'.replace('chapter_',''))], fontsize=12, verticalalignment='center')
 ax1.legend().set_visible(False)
 
 gender = 'Female'
@@ -307,13 +329,14 @@ ax2.set_ylabel('Count of Disease Chapters')
 for column in df_subset.columns:
     line = ax2.plot(df_subset.index, df_subset[column], label=column)
     last_x, last_y = df_subset.index[-1], df_subset[column].iloc[-1]
-    ax2.text(last_x, last_y, f'{column}', fontsize=12, verticalalignment='center')
+    ax2.text(last_x, last_y, phe_cate_dict[int(f'{column}'.replace('chapter_',''))], fontsize=12, verticalalignment='center')
 ax2.legend().set_visible(False)
 
-fig.suptitle('Diseases self-repeating rate by chapter')
+fig.suptitle('Diseases self-repeating rate by chapter (weighted)')
 fig.tight_layout(rect=[0, 0.01, 1, 0.98])
 # plt.show()
-plt.savefig(params.current_path/f'plot/{level}/disease_co_occurrence_within_diseases_by_chapter.pdf')
+
+plt.savefig(params.current_path/f'plot/{level}/disease_co_occurrence_{record_column}_within_diseases_by_chapter_chronic.pdf')
 
 
 # ----------------------------------------------------------
@@ -334,8 +357,10 @@ def remove_chapters_from_list(row,chapter_ranges):
     return chapters
 df_subset[disease_column] = df_subset[disease_column].apply(lambda x: remove_chapters_from_list(x, chapter_ranges))
 # update the diesease count
-df_subset['disease_count']= [len(x) if str(x) != 'None' else 0 for x in df_subset[disease_column]]
-
+if weight_control:
+    df_subset[f'disease_count'] = [len(x)*weight if str(x) not in params.nan_str  else 0 for x,weight in zip(df[disease_column],df['weight'])]
+else:
+    df_subset[f'disease_count'] = [len(x) if str(x) not in params.nan_str else 0 for x in df[disease_column]]
 
 from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import fpgrowth
@@ -351,9 +376,7 @@ te_ary = te.fit(dataset).transform(dataset)
 df_fp = pd.DataFrame(te_ary, columns=te.columns_)
 
 # Using fpgrowth to find frequent itemsets with a minimum support of 0.05
-frequent_itemsets = fpgrowth(df_fp, min_support=0.05, use_colnames=True)
-
-
+frequent_itemsets = fpgrowth(df_fp, min_support=0.01, use_colnames=True)
 
 
 
@@ -361,7 +384,7 @@ fig, (ax1,ax2) = plt.subplots(2,1)
 plt.rcParams["figure.figsize"] = [8,13]
 
 # bar chart of the support of the frequent itemsets
-frequent_itemsets['itemsets_name'] = [', '.join([str(m) for m in list(x)])for x in frequent_itemsets['itemsets']]
+frequent_itemsets['itemsets_name'] = [', '.join([phe_cate_dict[int(m)] for m in list(x)])for x in frequent_itemsets['itemsets']]
 frequent_itemsets_1 = frequent_itemsets.sort_values(by='support')
 ax1.bar(frequent_itemsets_1['itemsets_name'], frequent_itemsets_1['support'], color='skyblue')
 ax1.set_xlabel('Disease Chapter(s)')
@@ -375,7 +398,7 @@ ax1.text(0.2, 1.03, 'a. Proportion of Frequent Itemsets', horizontalalignment='c
 
 # network view
 
-frequent_itemsets['itemsets'] = frequent_itemsets['itemsets'].apply(lambda x: list(x))
+frequent_itemsets['itemsets'] = [[phe_cate_dict[int(m)]for m in x ] for x in frequent_itemsets['itemsets']]
 
 G = nx.Graph()
 # Adding nodes and edges based on itemsets and their supports
@@ -404,7 +427,10 @@ nx.draw_networkx_nodes(G, pos, node_color='skyblue', node_size=800,ax=ax2)
 # Edges
 edges = G.edges(data=True)
 edge_labels = nx.get_edge_attributes(G, 'label')
+
 nx.draw_networkx_edges(G, pos, edgelist=edges, width=[d['weight']*12 for u, v, d in edges],ax=ax2)
+
+
 nx.draw_networkx_labels(G, pos, font_size=12, font_family='sans-serif',ax=ax2)
 nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_color='red', font_size=12,ax=ax2)
 
@@ -412,11 +438,9 @@ ax2.spines[['right', 'top','bottom','left']].set_visible(False)
 # ax2.set_title('Network view of paired chapters')
 ax2.text(0.2, 1, 'b. Network view of paired chapters', horizontalalignment='center', verticalalignment='center', transform=ax2.transAxes, fontsize=14)
 
-fig.suptitle('Disease co-occurrence between diseases by chapter')
+fig.suptitle(f'Disease co-occurrence between diseases by chapter {"(weighted)" if weight_control else ""}')
 fig.tight_layout(rect=[0, 0.01, 1, 0.98])
 
 #plt.show()
-plt.savefig(params.current_path/f'plot/{level}/disease_co_occurrence_between_diseases_by_{level}.pdf')
-
-
+plt.savefig(params.current_path/f'plot/{level}/disease_co_occurrence_between_diseases_by_{level}_{record_column}_{"_weighted" if weight_control else ""}.pdf')
 temp= df[['31','21022']].value_counts().reset_index()
