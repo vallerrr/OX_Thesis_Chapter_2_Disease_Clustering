@@ -362,20 +362,21 @@ def clean_unmatched_ICD(row):
     return updated_row
 
 
-def return_chronoic_code(val,df_phemap):
+def return_chronoic_code(val,df_phemap,threshold=0.5):
     """
     only returns the phecode that is chronoic, otherwise None
     :param val:
     :param df_phemap:
     :return:
     """
+
     if '[' in str(val):
         # if those diseases are from one date, executing the function in the list
         # if there is only one condition within the list is chronic, unfold the list
         val_list = []
         for v in val:
             v = float(v)
-            if df_phemap.loc[df_phemap['PHECODE'] == v,'CHRONIC_INDICATOR'].values[0]==1:
+            if df_phemap.loc[df_phemap['phecode'] == v,'chronic'].values[0]>=threshold:
                 val_list.append(v)
             # we don't need to add the non-chronic condition inside the val_list as they are from the same date
             # we tackle with the situation of only 1/0 disease are chronic as below
@@ -391,7 +392,7 @@ def return_chronoic_code(val,df_phemap):
     else:
         if pd.notnull(val):
             val = float(val)
-            if df_phemap.loc[df_phemap['PHECODE'] == val,'CHRONIC_INDICATOR'].values[0]==1:
+            if df_phemap.loc[df_phemap['phecode'] == val,'chronic'].values[0]>=threshold:
                 return val
             else:
                 return None

@@ -89,7 +89,7 @@ df_ICD['type'].value_counts()
 # 4. dates for a single df
 # ------------------------------------------------------------------------------------------------------------------
 df_single_record = df_disease[['eid',f'p{HES_ICD_ids[record_column]["id"]}',f'{record_column}_icd_codes', f'{record_column}_uniq_count']]
-dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0,int(df_single_record[ f'{record_column}_uniq_count'].max()))]
+dates_col = [f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0,int(df_single_record[f'{record_column}_uniq_count'].max()))]
 columns = ['eid',f'{record_column}_icd_codes', f'{record_column}_uniq_count']+dates_col
 
 field_id = HES_ICD_ids[record_column]['time']
@@ -97,6 +97,7 @@ ind = df_codebook.loc[df_codebook['field_id'] == int(field_id)].index[0]
 row = df_codebook.loc[ind, ]
 
 df_single_record = pd.merge(df_single_record, utils.data_reader(row), on='eid')
+df_single_record.rename(columns={f'p{HES_ICD_ids[record_column]["time"]}_a{x}' : f'p{HES_ICD_ids[record_column]["time"]}_a{x:03d}' for x in range(0,int(df_single_record[f'{record_column}_uniq_count'].max()))}, inplace=True)
 df_single_record = df_single_record[columns]
 df_single_record.to_csv(params.intermediate_path / f'{record_column}_complete.csv', index=False)
 
@@ -104,7 +105,7 @@ df_single_record.to_csv(params.intermediate_path / f'{record_column}_complete.cs
 # 5. index_of_first_disease_out_window
 # ------------------------------------------------------------------------------------------------------------------
 # 5.0 read and concat the access date
-access_date_column ='53'
+access_date_column = '53'
 ind = df_codebook.loc[df_codebook['field_id'] == int(access_date_column)].index[0]
 row = df_codebook.loc[ind,]
 temp = utils.data_reader(row)

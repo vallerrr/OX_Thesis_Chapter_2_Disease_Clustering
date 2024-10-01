@@ -1085,16 +1085,26 @@ df.to_pickle(final_data_path / 'UKB_wave_0_final_non_standardised.pkl')
 # standardise the data
 # ======================================================================================================================
 import polars as pl
-# can polars read pickle file?
-df = pd.read_pickle(final_data_path / 'UKB_wave_0_final_non_standardised.pkl')
 
-for column in df.columns:
-    if column == '53': # date of attending assessment centre
+df = pd.read_pickle(final_data_path / 'UKB_wave_0_final_non_standardised.pkl')
+df[f'10722'].replace({3:1,2:1, list(df['10722'].unique())[1]:1, 4:2 ,1:2,5:3},inplace=True)
+# 1: missing, CSEs or equivalent', 'O levels/GCSEs or equivalent'
+# 2: A levels/AS levels or equivalent
+# 3: College or University degree,Other professional qualifications e.g. nursing, teaching
+# change on the qualifications as it contains wrong order
+columns = ['eid', '399', '20023', '1498', '21022', '52', '31', '34', '845', '10722', '796', '777', '806', '21000', '3659', '738', '6139', '699', '709', '728', '680', '670', '26416', '26414', '26412', '26413', '26415', '26411', '26410', '26417', '6146', '21003', '53', '55', '1767', '120', '1677', '1687', '1697', '1707', '1787', '1777', '20117', '1558', '1628', '1618', '1369', '1438', '1448', '1458', '1408', '1518', '1538', '1418', '6144', '1339', '1389', '1359', '1349', '1299', '1478', '1488', '1548', '1528', '2237', '22035', '22036', '22032', '22038', '22039', '22037', '22033', '22034', '1100', '914', '874', '884', '904', '864', '1090', '1080', '1070', '6162', '2139', '2129', '2159', '2149', '1220', '1170', '1180', '1190', '1160', '1200', '1210', '1239', '20160', '1269', '1279', '20116', '1259', '2110', '1031', '1727', '1757', '2277', '1717', '1050', '1060', '2267', '2316', '2345', '2335', '2217', '2227', '2207', '2296', '2188', '2178', '2306', '2247', '2257', '2453', '2443', '2463', '2473', '6154', '2492', '6155', '1960', '2050', '2070', '2080', '2060', '2030', '6145', '1940', '2020', '1930', '1920', '1970', '2040', '2100', '2090', '1950', '2010', '1990', '1980', '2000', '6149', '23105', '4079', '95', '4080', '23124', '23120', '23123', '23119', '23125', '23121', '23126', '23122', '23099', '23104', '23110', '23109', '23108', '23107', '23106', '23116', '23112', '23115', '23111', '23117', '23113', '23118', '23114', '23128', '23127', '23129', '23130', '23100', '23101', '23102', '21001', '49', '51', '20015', '50', '48', '21002', '46', '47', '3089', '3088', '3062', '3090', '1797', '1807', '1835', '3526', '1873', '1883', '22189', '6142001', '6142002', '6142003', '6142004', '20277']
+# remove month of birth, year of birth and date of attending assessment centre
+columns.remove('53')
+columns.remove('52')
+
+for column in columns:
+    if column == 'eid': # date of attending assessment centre
         continue
     else:
+
         df[column] = df[column].astype(float)
         df[column] = (df[column] - df[column].mean()) / df[column].std()
-    print(column,df[column].mean(), df[column].std())
+        print(column, df[column].mean(), df[column].std())
 
-df.to_pickle(final_data_path / 'UKB_wave_0_final_standardised.pkl')
+df[columns].to_pickle(final_data_path / 'UKB_wave_0_final_standardised.pkl')
 
