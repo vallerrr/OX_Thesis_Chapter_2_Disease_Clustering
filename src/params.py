@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 disease_record_column = "all_icd" #'main_icd' "all_icd" "second_icd"
+chronic_threshold=0.5
 #  paths
 current_path = Path.cwd()
 recorder_path = current_path/'Data/downloaded_data/recorder'
@@ -21,6 +22,8 @@ job_code_dict = {'Corporate Managers': 'Managers and Senior Officials', 'Corpora
 HES_ICD_ids = {"all_icd": {"id": '41270', "time": '41280'}, "main_icd": {"id": '41202', "time": '41262'}, "second_icd": {"id": '41203', "time": None}}
 disease_columns_dict = {'chapter':'diseases_within_window_icd_chapter_coding','3-char':'diseases_within_window_all_icd_first_3','block':'diseases_within_window_icd_parent_coding','phecode':'diseases_within_window_phecode_selected','phecode_cate':'diseases_within_window_phecode_selected_category','chronic':"diseases_within_window_phecode_selected_chronic_first_occ",'chronic_cate':'diseases_within_window_phecode_selected_category_chronic_first_occ'}
 phe_cate_dict = {'infectious diseases': 1, 'neoplasms': 2, 'endocrine/metabolic': 3, 'hematopoietic': 4, 'mental disorders': 5, 'neurological': 6, 'sense organs': 7, 'circulatory system': 8, 'respiratory': 9, 'digestive': 10, 'genitourinary': 11, 'pregnancy complications': 12, 'dermatologic': 13, 'musculoskeletal': 14, 'congenital anomalies': 15, 'symptoms': 16, 'injuries & poisonings': 17}
+phe_cate_dict_fo = {'infectious diseases': 1,  'neoplasms': 2, 'endocrine/metabolic': 3, 'hematopoietic': 4, 'mental disorders': 5, 'neurological': 6, 'sense organs': 7, 'circulatory system': 8, 'respiratory': 9, 'digestive': 10, 'genitourinary': 11, 'pregnancy complications': 12, 'dermatologic': 13, 'musculoskeletal': 14, 'congenital anomalies': 15, 'symptoms': 17, 'injuries & poisonings': 18}
+
 nan_str = ['nan','NaN','None']
 
 

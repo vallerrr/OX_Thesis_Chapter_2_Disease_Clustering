@@ -50,3 +50,42 @@ class MT19937:
             if y % 2 != 0:
                 self.mt[i] = self.mt[i] ^ 0x9908b0df
         self.index = 0
+
+
+short_long_dict = {
+    "klaji_k2": "Type of education",
+    "optuki": "Received student financial aid",
+    "ptoim1": "Main type of activity (TVM)",
+    "ammattikoodi_k": "Code of occupation, 3-digit level",
+    "tyke": "Number of unemployment months",
+    "tyokk": "Months in employment",
+    "akoko_k": "Size of household-dwelling unit",
+    "asty": "Type of household-dwelling unit",
+    "hape": "Tenure status of dwelling",
+    "hulu": "Number of rooms (kitchen not included)",
+    "taty": "Type of building",
+    "vata": "Standard of equipment",
+    "penulaika": "Age of youngest child in family",
+    "peas": "Family status",
+    "lkm_k": "Number of children in family",
+    "a18lkm_k": "Number of all children aged under 18 in the family",
+    "a7lkm_k": "Number of children aged under seven in the family",
+    "a3lkm_k": "Number of children aged under three in the family",
+    "pekoko_k": "Size of family",
+    "pety": "Family type",
+    "vela": "Old-age pension",
+    "tkela": "Disability pension",
+    "tyela": "Unemployment pension",
+    "mela": "Special pension for farmers",
+    "osela": "Part-time pension",
+    "pela": "Survivor's pension",
+    "yvela": "Individual early pension",
+    "kturaha_k": "Disposable income",
+    "velaty_k": "Debts in total",
+    "lvar_k": "Taxable assets",
+    "svatva_k": "Earned income total in state taxation",
+    "palk_k": "Earned income",
+    "tyotu_k": "Earned income",
+    "tyrtuo_k": "Entrepreneurial income",
+    "auto_k": "Car ownership"
+}

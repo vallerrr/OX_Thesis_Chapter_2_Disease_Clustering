@@ -122,7 +122,7 @@ df_single_record = pd.merge(df_read, df_single_record, on='eid', how='left')
 
 temp = df_single_record.copy()
 # sort the date columns
-temp = temp[columns_to_remain + [ f'{record_column}_uniq_count', f'{record_column}_icd_codes',access_date_column] + dates_col]
+temp = temp[columns_to_remain + [f'{record_column}_uniq_count', f'{record_column}_icd_codes',access_date_column] + dates_col]
 
 # 5.2 sort the diseases by dates, change the order of dates columns
 # 5.2.1 reorder the diseases based on their corresponding date

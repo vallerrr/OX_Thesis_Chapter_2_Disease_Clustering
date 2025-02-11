@@ -28,8 +28,8 @@ def data_reader(row, instance=4):
         except:
             cols = ids[file_name]
         if 'eid' not in cols:
-            cols= ['eid'] + cols
-        temp = pd.read_csv(params.participant_path / f'{file_name}.csv', low_memory=False)
+            cols = ['eid'] + cols
+        temp = pd.read_csv(f'/Volumes/Valler/Python/OX_Thesis/Chapter_2_Disease_Clustering/Data/downloaded_data/participant/{file_name}.csv', low_memory=False)
         temp = temp.loc[:, cols]
         # concat temp and df based on the eid column
         if len(df) == 0:
@@ -396,3 +396,58 @@ def return_chronoic_code(val,df_phemap,threshold=0.5):
                 return val
             else:
                 return None
+
+
+def marking_phecode_chronic_chapter(df,df_phemap,df_phe_db):
+    """
+    Marking the phecode, chronic and chapter for the diseases in df
+    :param df:
+    :param df_phemap:
+    :param df_phe_db:
+    :return:
+    """
+    df['phecode'] = [df_phemap.loc[df_phemap['ICD10'] == x,'PHECODE'].values[0] if x in df_phemap['ICD10'].tolist() else None for x in df['ICD10']]
+    df['chronic'] = [df_phemap.loc[df_phemap['ICD10'] == x,'chronic'].values[0] if x in df_phemap['ICD10'].tolist() else None for x in df['ICD10']]
+    df['chapter'] = [df_phe_db.loc[df_phe_db['phecode'] == x,'category'].values[0] if x in df_phe_db['phecode'].tolist() else None for x in df['phecode']]
+    return df
+
+def read_phe_database():
+
+
+    df_phe_db = pd.read_csv(params.ICD_path / 'phecode_definitions1.2.csv')  # 1866 Phecodes
+    df_phemap = pd.read_csv(params.ICD_path / 'Phecode_map_v1_2_icd10_beta.csv')  # 9066 ICD codes, 1571 Phecodes
+
+    # clean the df_ccir
+    #df_ccir = pd.read_csv(params.ICD_path / 'CCIR_v2024-1/CCIR-v2024-1.csv', header=2)  #
+    #df_ccir.rename(columns={x: x.replace("'", '').replace(" ", "_").replace("-", "_") for x in df_ccir.columns}, inplace=True)
+    #df_ccir['ICD_10_CM_CODE'] = [str(x).replace("'", '') for x in df_ccir['ICD_10_CM_CODE']]
+
+    #df_phemap_CM = pd.read_csv(params.ICD_path / 'Phecode_map_v1_2_icd10cm_beta.csv')
+    #df_phemap_CM['ICD10_harmonised'] = [str(x).replace(".", "") for x in df_phemap_CM['icd10cm']]
+    #df_phemap_CM = pd.merge(left=df_ccir[['ICD_10_CM_CODE', 'CHRONIC_INDICATOR']], right=df_phemap_CM, left_on='ICD_10_CM_CODE', right_on='ICD10_harmonised', how='right')  #
+    #df_phemap_CM['CHRONIC_INDICATOR'].replace({9: 0}, inplace=True)
+    # record back to the df_phe file
+    #df_phe_db['chronic'] = [df_phemap_CM.loc[df_phemap_CM['phecode'] == float(p), 'CHRONIC_INDICATOR'].sum() / len(df_phemap_CM.loc[df_phemap_CM['phecode'] == float(p), 'CHRONIC_INDICATOR'].notnull()) if p in df_phemap_CM['phecode'].tolist() else None for p in df_phe_db['phecode']]
+    #df_phemap['chronic'] = [df_phemap_CM.loc[df_phemap_CM['phecode'] == float(p), 'CHRONIC_INDICATOR'].sum() / len(df_phemap_CM.loc[df_phemap_CM['phecode'] == float(p), 'CHRONIC_INDICATOR'].notnull()) if p in df_phemap_CM['phecode'].tolist() else None for p in df_phemap['PHECODE']]
+    # df_phemap.to_csv(params.ICD_path/ 'Phecode_map_v1_2_icd10_beta.csv',index=False)
+    # df_phe_db.to_csv(params.ICD_path/ 'phecode_definitions1.2.csv',index=False)
+
+    df_phemap.rename(columns={'PHECODE': 'phecode', 'ICD10': 'ICD10'}, inplace=True)
+    df_phe_db.loc[df_phe_db['phecode'] == 296.20000, 'chronic'] = 1  # depression
+    df_phe_db.loc[df_phe_db['phecode'] == 296.20000, 'category'] = 'Mental disorders'
+    return df_phe_db,df_phemap
+
+
+
+def marking_phecode_chronic_chapter(df,df_phemap,df_phe_db,disease_column):
+    """
+    Marking the phecode, chronic and chapter for the diseases in df
+    :param df:
+    :param df_phemap:
+    :param df_phe_db:
+    :return:
+    """
+    df[f'{disease_column}_phecode'] = [df_phemap.loc[df_phemap['ICD10'] == x,'phecode'].values[0] if x in df_phemap['ICD10'].tolist() else None for x in df[disease_column]]
+    df[f'{disease_column}_chronic'] = [df_phemap.loc[df_phemap['ICD10'] == x,'chronic'].values[0] if x in df_phemap['ICD10'].tolist() else None for x in df[disease_column]]
+    df['chapter'] = [df_phe_db.loc[df_phe_db['phecode'] == x,'category'].values[0] if x in df_phe_db['phecode'].tolist() else None for x in df['phecode']]
+    return df
